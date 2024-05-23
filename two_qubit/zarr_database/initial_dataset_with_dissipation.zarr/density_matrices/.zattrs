@@ -1,0 +1,8 @@
+{
+    "_ARRAY_DIMENSIONS": [
+        "time",
+        "initial_state",
+        "density_matrix_row",
+        "density_matrix_col"
+    ]
+}

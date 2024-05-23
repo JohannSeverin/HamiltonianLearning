@@ -1,0 +1,10 @@
+{
+    "intended_dimension_order": [
+        "time",
+        "initial_state",
+        "density_matrix_row",
+        "density_matrix_col",
+        "measurement_basis",
+        "outcome"
+    ]
+}
