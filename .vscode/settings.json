@@ -1,0 +1,5 @@
+{
+    "python.analysis.extraPaths": [
+        "./hamiltonian_learning_refactor/hamiltonian_learning"
+    ]
+}
