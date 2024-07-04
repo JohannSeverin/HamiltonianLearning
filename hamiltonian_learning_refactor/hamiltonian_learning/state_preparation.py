@@ -133,12 +133,15 @@ class StatePreparation:
 
             @jax.jit
             def generator(state_preparation_params):
+                # state_preparation_params = jnp.array([0.1, 0.2])
+
                 # Find the mixed state contributions using temperature like softmax
                 ground_states_diag = jnp.zeros((self.n_qubits, 2))
                 ground_states_diag = ground_states_diag.at[:, 0].set(1.0)
                 ground_states_diag = ground_states_diag.at[:, 1].set(
                     state_preparation_params
                 )
+                ground_states_diag = jax.nn.softmax(-ground_states_diag, axis=-1)
                 ground_states_diag = jax.nn.softmax(ground_states_diag, axis=-1)
 
                 # Get the ground states for individual qubits
