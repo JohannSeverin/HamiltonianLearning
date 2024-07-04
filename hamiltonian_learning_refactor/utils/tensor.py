@@ -114,8 +114,8 @@ def sum_two_qubit_interaction_tensors(
     return output
 
 
-@partial(jit, static_argnames=("Nqubits", "connections", "Ninteractions"))
-def sum_k_local_interaction_tensors(connections, tensors, Nqubits, k_locality):
+@partial(jit, static_argnums=(1, 2, 3))
+def sum_k_local_interaction_tensors(tensors, connections, Nqubits, k_locality):
     shape = (2,) * (2 * Nqubits)
     output = jnp.zeros(shape)
 

@@ -1,25 +1,235 @@
-# Skets at the moment to generate the parameterization of the Lindblad Master Equation
+# Sketch at the moment to generate the parameterization of the Lindblad Master Equation
 from typing import Union, List, Tuple
 import jax.numpy as jnp
 import itertools
+import os.path as osp
+from functools import partial
+
+from jax import jit
+import jax
+
+jax.config.update("jax_enable_x64", True)
+
+import sys
+
+sys.path.append(
+    osp.join(osp.dirname(osp.abspath(__file__)), "..")
+)  # Add the path to the parent directory
+from utils.tensor import tensor, _add_matrix_to_tensor
+from utils.operators import sigma_x, sigma_y, sigma_z, identity
 
 
-# Locality -> Set if all to all connections
-# Graph -> For each locality > 2 a tuple of sets of connections
-# Can be given as a dict {2: ((0, 1), (1, 2), (2, 3), (3, 0)), 3: ((0, 1, 2), (1, 2, 3), (2, 3, 0), (3, 0, 1))}
+### FUNCTIONS FOR GENERATING HAMILTONIAN GIVEN THE STRUCTURE ###
+@partial(jit, static_argnums=0)
+def _pauli_product(locality: int):
+    """
+    Generate the Pauli product for a given locality.
+    """
+    return jnp.array(
+        [
+            tensor(*pauli)
+            for pauli in itertools.product(
+                [sigma_x(), sigma_y(), sigma_z()], repeat=locality
+            )
+        ]
+    )  # .reshape(*shape)
 
 
+@partial(jit, static_argnums=(1, 2, 3))
+def _convert_pauli_to_hamiltonians(tensors, connections, n_qubits, locality):
+    """
+    Takes the Pauli product representation and converts to hamiltonians describing the dynamics
+    """
+
+    number_of_connections = len(connections)
+    pauli_matrices = _pauli_product(locality)
+
+    tensors = tensors.reshape((number_of_connections, 3**locality))
+
+    return jnp.einsum("cp, pij -> cij", tensors, pauli_matrices)
+
+
+@partial(jit, static_argnums=(1, 2, 3))
+def _sum_interaction_hamiltonian(tensors, connections, n_qubits, locality):
+    shape = (2,) * (2 * n_qubits)
+    output = jnp.zeros(shape, dtype=jnp.complex128)
+
+    # Loop over connection elements
+    for i in range(len(connections)):
+
+        # Need to calculate the index order for permuting the tensor so the desired qubits interact
+        order = [-1] * n_qubits
+        connection = connections[i]
+
+        for j, conn in enumerate(connection):
+            order[conn] = j
+
+        fill_with = list(range(locality, n_qubits))
+
+        for j, o in enumerate(order):
+            if o == -1:
+                order[j] = fill_with.pop(0)
+
+        order = order + [n_qubits + i for i in order]
+
+        # Create the Hamiltonian contribution
+        H = tensors[i].reshape((2,) * locality * 2)
+
+        # Fill with identity to have proper hilbert space
+        for j in range(n_qubits - locality):
+            H = _add_matrix_to_tensor(H, jnp.eye(2))
+
+        H = H.transpose(order)
+
+        output += H
+
+    return output
+
+
+### FUNCTIONS FOR GENERATING JUMP OPERATORS GIVEN THE STRUCTURE ###
+def _calculate_number_of_generators(lindblad_graph: dict):
+    """
+    Calculates the number of generators for the Lindbladian.
+    """
+    # TODO: CORRECT FOR IDENTITY OVERCOUNTING
+
+    number_of_jumps = 0
+
+    for locality, connections in lindblad_graph.items():
+        number_of_jumps += len(connections) * 4**locality
+
+    return number_of_jumps
+
+
+@partial(jit, static_argnums=(0,))
+def _pauli_product_with_id(locality: int):
+    """
+    Generate the Pauli product for a given locality.
+    """
+    return jnp.array(
+        [
+            tensor(*pauli)
+            for pauli in itertools.product(
+                [identity(), sigma_x(), sigma_y(), sigma_z()], repeat=locality
+            )
+        ]
+    )
+
+
+@partial(jit, static_argnums=(1, 2, 3))
+def _to_cholesky(tensors, connections, n_qubits, locality):
+    """
+    Generates the jump operators based on the Lindbladian parameters.
+    """
+    number_of_generators = 4**locality
+    tensors = tensors.reshape(
+        (len(connections), number_of_generators, number_of_generators)
+    )
+
+    # The calzone
+    output_cholesky = jnp.zeros(
+        (len(connections), number_of_generators, number_of_generators),
+        dtype=jnp.complex128,
+    )
+
+    output_cholesky += jnp.tril(tensors)
+    output_cholesky += 1j * jnp.swapaxes(jnp.triu(tensors), -2, -1)
+
+    return output_cholesky
+
+
+@partial(jit, static_argnums=(1, 2, 3))
+def _cholesky_to_jumps(tensors, connections, n_qubits, locality):
+    """
+    Converts the Cholesky decomposition to jump operators.
+    """
+    number_of_connections = len(connections)
+    tensors = tensors.reshape(number_of_connections, 4**locality, 4**locality)
+    paulis = _pauli_product_with_id(locality)
+
+    jump_operators = jnp.einsum("cij, jkl -> cikl", tensors, paulis).reshape(
+        (number_of_connections, 4**locality)
+        + (
+            2,
+            2,
+        )
+        * locality
+    )
+
+    return jump_operators
+
+
+_add_matrix_to_tensor_vmap = jax.vmap(_add_matrix_to_tensor, in_axes=(0, None))
+
+
+@partial(jit, static_argnums=(1, 2, 3))
+def _sum_interaction_jump_operators(tensors, connections, n_qubits, locality):
+    """
+    Sums the interaction jump operators.
+    """
+
+    # Counts of connections and jump operators
+    number_of_connections = len(connections)
+    number_of_jumps_per_connection = 4**locality
+    number_of_jumps = number_of_connections * number_of_jumps_per_connection
+
+    # TODO: Strip identities from tensors
+    # tensors = tensors[..., 1:, 1:]
+
+    # Full shape
+    shape = (number_of_jumps,) + (2**n_qubits, 2**n_qubits)
+    output = jnp.zeros(shape, dtype=jnp.complex128)
+
+    for i in range(len(connections)):
+        # Next few lines are sorting the indices for transposing the final tensor.
+        order = [-1] * n_qubits
+        connection = connections[i]
+
+        for j, conn in enumerate(connection):
+            order[conn] = j
+
+        fill_with = list(range(locality, n_qubits))
+
+        for j, o in enumerate(order):
+            if o == -1:
+                order[j] = fill_with.pop(0)
+
+        # Add second matrix idx
+        order = order + [n_qubits + i for i in order]
+
+        # Push with one, because we have multiple jump operators
+        order = [
+            0,
+        ] + [o + 1 for o in order]
+
+        # Create the Lindbladian jumps
+        Ls = tensors[i].reshape((number_of_jumps_per_connection,) + (2,) * locality * 2)
+
+        # Upconvert matrix to include all other qubits
+        for j in range(n_qubits - locality):
+            Ls = _add_matrix_to_tensor_vmap(Ls, jnp.eye(2))
+
+        # Sort the order of the qubits
+        Ls = Ls.transpose(order)
+        Ls = Ls.reshape((number_of_jumps_per_connection, 2**n_qubits, 2**n_qubits))
+
+        # Add to the returning array
+        output = output.at[
+            i
+            * number_of_jumps_per_connection : (i + 1)
+            * number_of_jumps_per_connection
+        ].set(Ls)
+
+    # Out put the reshaped
+    return output
+
+
+### PARAMETRIZATION CLASS ###
 class Parameterization:
-    """
-    A class representing the parameterization of a quantum system.
-
-    Attributes:
-        n_qubits (int): The number of qubits in the system.
-        hamiltonian_locality (int): The locality of the Hamiltonian terms.
-        lindblad_locality (int): The locality of the Lindblad terms.
-        hamiltonian_graph (tuple, None or 'full): Tuple containing sets of connections defining a structure, None for no
-        lindblad_graph (optional): The graph representing the connectivity of the Lindblad terms.
-    """
+    # TODO: Add docstrings
+    # TODO: Add type hints
+    # TODO: Add random initialization to make guesses
+    # TODO: Add function to set certain parameters and ease the extraction of results
 
     def __init__(
         self,
@@ -37,7 +247,7 @@ class Parameterization:
         self.n_qubits = n_qubits
         self.qubit_levels = qubit_levels
         self.hilbert_size = self.qubit_levels**n_qubits
-        self.generators = self.qubit_levels**2 - 1  # Minus idenity
+        self.generators = self.qubit_levels**2 - 1  # not including identity
 
         # Set values to locality
         self.hamiltonian_locality = hamiltonian_locality
@@ -50,17 +260,22 @@ class Parameterization:
         # Generate graphs if not given
         if hamiltonian_graph is None:
             self.hamiltonian_graph = {
-                i: tuple(itertools.product(range(n_qubits), repeat=i))
-                for i in range(self.hamiltonian_locality)
+                i: tuple(itertools.combinations(range(n_qubits), r=i))
+                for i in range(1, self.hamiltonian_locality + 1)
             }
 
         if lindblad_graph is None:
             self.lindblad_graph = {
-                i: tuple(itertools.product(range(n_qubits), repeat=i))
-                for i in range(self.lindblad_locality)
+                i: tuple(itertools.combinations(range(n_qubits), r=i))
+                for i in range(1, self.lindblad_locality + 1)
             }
 
+        self.number_of_jump_operators = _calculate_number_of_generators(
+            lindblad_graph=self.lindblad_graph
+        )
+
         # Generate Hamiltonian Parameters
+
         self.hamiltonian_params = self._generate_hamiltonian_params()
         self.lindbladian_params = self._generate_lindbladian_params()
 
@@ -71,6 +286,10 @@ class Parameterization:
         Returns:
             dict: A dictionary containing the Hamiltonian parameters for each locality.
         """
+        hamiltonian_params = {
+            1: jnp.zeros((self.n_qubits, self.generators), dtype=jnp.complex128)
+        }
+
         hamiltonian_connections = {
             locality: len(graph) for locality, graph in self.hamiltonian_graph.items()
         }
@@ -78,10 +297,14 @@ class Parameterization:
             locality: [hamiltonian_connections[locality]] + [self.generators] * locality
             for locality in hamiltonian_connections
         }
-        hamiltonian_params = {
-            locality: jnp.zeros(hamiltonian_params_shape[locality])
-            for locality in hamiltonian_connections
-        }
+        hamiltonian_params.update(
+            {
+                locality: jnp.zeros(
+                    hamiltonian_params_shape[locality], dtype=jnp.complex128
+                )
+                for locality in hamiltonian_connections
+            }
+        )
         return hamiltonian_params
 
     def _generate_lindbladian_params(self):
@@ -91,25 +314,119 @@ class Parameterization:
         Returns:
             dict: A dictionary containing the Lindbladian parameters for each locality.
         """
+        lindbladian_params = {
+            1: jnp.zeros(
+                (self.n_qubits, self.generators + 1, self.generators + 1),
+                dtype=jnp.float64,
+            )
+        }
+
         lindbladian_connections = {
             locality: len(graph) for locality, graph in self.lindblad_graph.items()
         }
         lindbladian_params_shape = {
-            locality: lindbladian_connections[locality] * [self.qubit_levels] * 2
+            locality: [lindbladian_connections[locality]]
+            + [self.generators + 1] * 2 * locality
             for locality in lindbladian_connections
         }
-        lindbladian_params = {
-            locality: jnp.zeros(lindbladian_params_shape[locality])
-            for locality in lindbladian_connections
-        }
+        lindbladian_params.update(
+            {
+                locality: jnp.zeros(
+                    lindbladian_params_shape[locality], dtype=jnp.float64
+                )
+                for locality in lindbladian_connections
+            }
+        )
         return lindbladian_params
 
-    def get_hamiltonian(self):
-        return None  # hilbert_size x hilbert_size matrix
+    def get_hamiltonian_generator(self):
+        """
+        Creates a jitted function that converts the Hamiltonian parameters to a Hamiltonian matrix.
+        """
 
-    def get_jump_operators(self):
-        return None  # List of hilbert_size x hilbert_size matrices
+        @partial(jit)
+        def hamiltonian_generator(hamiltonian_params: dict):
+            """
+            Creates the Hamiltonian based on the Hamiltonian parameters.
+            """
+            hamiltonian = jnp.zeros((self.hilbert_size, self.hilbert_size))
+
+            for locality in range(1, self.hamiltonian_locality + 1):
+                hamiltonians = _convert_pauli_to_hamiltonians(
+                    hamiltonian_params[locality],
+                    self.hamiltonian_graph[locality],
+                    self.n_qubits,
+                    locality,
+                )
+                hamiltonian += _sum_interaction_hamiltonian(
+                    hamiltonians,
+                    self.hamiltonian_graph[locality],
+                    self.n_qubits,
+                    locality,
+                ).reshape((self.hilbert_size, self.hilbert_size))
+
+            return hamiltonian
+
+        return hamiltonian_generator
+
+    def get_jump_operator_generator(self):
+        """
+        Creates the jump operators based on the Lindbladian parameters.
+        The structure is jitted out.
+        """
+
+        @partial(jit)
+        def lindbladian_generator(lindbladian_params: dict):
+            """
+            Creates the jump operators based on the Lindbladian parameters.
+            """
+            jump_operators = jnp.zeros(
+                (self.number_of_jump_operators, self.hilbert_size, self.hilbert_size),
+                dtype=jnp.complex128,
+            )
+            filled_untill_index = 0
+
+            for locality in range(1, self.lindblad_locality + 1):
+                choleskies = _to_cholesky(
+                    lindbladian_params[locality],
+                    self.lindblad_graph[locality],
+                    self.n_qubits,
+                    locality,
+                )
+                jumps = _cholesky_to_jumps(
+                    choleskies, self.lindblad_graph[locality], self.n_qubits, locality
+                )
+
+                operators = _sum_interaction_jump_operators(
+                    jumps, self.lindblad_graph[locality], self.n_qubits, locality
+                )
+
+                number_jumps_at_locality = len(operators)
+
+                jump_operators = jump_operators.at[
+                    filled_untill_index : filled_untill_index + number_jumps_at_locality
+                ].set(operators)
+                filled_untill_index += number_jumps_at_locality
+
+            return jump_operators
+
+        return lindbladian_generator
 
 
-class TimeEvolution:
-    parameterization: Parameterization
+if __name__ == "__main__":
+    NQUBITS = 5
+    H_LOCALITY = 5
+    L_LOCALITY = 0
+
+    parameters = Parameterization(
+        NQUBITS, hamiltonian_locality=H_LOCALITY, lindblad_locality=L_LOCALITY
+    )
+
+    hamiltonian_generator = parameters.get_hamiltonian_generator()
+    jump_operator_generator = parameters.get_jump_operator_generator()
+
+    hamiltonian_generator(parameters.hamiltonian_params)
+    jump_operator_generator(parameters.lindbladian_params)
+
+    # %timeit hamiltonian = hamiltonian_generator(parameters.hamiltonian_params)
+    # %timeit jump_operators = jump_operator_generator(parameters.lindbladian_params)

@@ -20,9 +20,9 @@ def create_solver(
     stepsize_controller=PIDController(1e-5, 1e-5),
     solver=Dopri5(),
     tlist=None,
-    initial_stepsize=1e-1,
+    initial_stepsize=10,
     number_of_jump_operators=0,
-    max_steps=10000,
+    max_steps=1000,
 ):
     adjoint = (
         DirectAdjoint() if adjoint else RecursiveCheckpointAdjoint(checkpoints=None)
