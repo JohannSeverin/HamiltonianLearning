@@ -57,7 +57,7 @@ def _get_dissipation_term(rho, jump_operators):
     return drho
 
 
-@jit
+# @jit
 def _lindblad_master_equation(rho, hamiltonian, jump_operators):
     """
     The differential equation that governs the Lindblad master equation.
@@ -101,7 +101,7 @@ class Solver:
         times: jnp.ndarray,
         # initial_states: jnp.ndarray,
         initial_stepsize: float = 1.0,
-        max_steps: int = 1000,
+        max_steps: int = 10000,
         ode_solver: Literal["Dopri5", "Dopri8"] = "Dopri5",
         stepsize_controller: Literal["basic", "adaptive"] = "basic",
         adjoint: bool = False,
@@ -140,7 +140,7 @@ class Solver:
 
         """
 
-        @jit
+        # @jit
         def dynamics(t, rho, args):
             """
             Differential equation governing the system
@@ -149,11 +149,12 @@ class Solver:
 
             return drho
 
+        self.dynamics = dynamics
         term = diffrax.ODETerm(dynamics)
 
-        self.dynamics = dynamics
+        # print(term, self.ode_solver)
 
-        @jit
+        # @jit
         def evolve_states(initial_state, hamiltonian, jump_operators):
 
             return diffrax.diffeqsolve(
@@ -175,11 +176,14 @@ class Solver:
 
 # Tests
 if __name__ == "__main__":
+    import sys, pathlib
+
+    sys.path.append(str(pathlib.Path(__file__).parent.parent))
     from parameterization import Parameterization
 
-    NQUBITS = 5
-    H_LOCALITY = 5
-    L_LOCALITY = 5
+    NQUBITS = 3
+    H_LOCALITY = 3
+    L_LOCALITY = 3
 
     parameters = Parameterization(
         NQUBITS, hamiltonian_locality=H_LOCALITY, lindblad_locality=L_LOCALITY

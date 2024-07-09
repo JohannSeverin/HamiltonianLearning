@@ -239,6 +239,8 @@ class Parameterization:
         lindblad_locality: int = None,
         hamiltonian_graph: dict = None,
         lindblad_graph: dict = None,
+        hamiltonian_amplitudes: list[float] = None,
+        lindblad_amplitudes: list[float] = None,
     ):
         assert hamiltonian_locality is not None or hamiltonian_graph is not None
         assert lindblad_locality is not None or lindblad_graph is not None
@@ -276,10 +278,12 @@ class Parameterization:
 
         # Generate Hamiltonian Parameters
 
-        self.hamiltonian_params = self._generate_hamiltonian_params()
-        self.lindbladian_params = self._generate_lindbladian_params()
+        self.hamiltonian_params = self._generate_hamiltonian_params(
+            hamiltonian_amplitudes
+        )
+        self.lindbladian_params = self._generate_lindbladian_params(lindblad_amplitudes)
 
-    def _generate_hamiltonian_params(self):
+    def _generate_hamiltonian_params(self, amplitude=None, seed=0):
         """
         Generates the Hamiltonian parameters based on the Hamiltonian graph.
 
@@ -305,9 +309,19 @@ class Parameterization:
                 for locality in hamiltonian_connections
             }
         )
+
+        if amplitude:
+            key = jax.random.PRNGKey(seed)
+            keys = jax.random.split(key, self.hamiltonian_locality)
+
+            for locality in hamiltonian_params:
+                hamiltonian_params[locality] = amplitude * jax.random.normal(
+                    keys[locality], hamiltonian_params[locality].shape
+                )
+
         return hamiltonian_params
 
-    def _generate_lindbladian_params(self):
+    def _generate_lindbladian_params(self, amplitudes=None, seed=0):
         """
         Generates the Lindbladian parameters based on the Lindbladian graph.
 
@@ -337,7 +351,57 @@ class Parameterization:
                 for locality in lindbladian_connections
             }
         )
+
+        if amplitudes:
+            key = jax.random.PRNGKey(seed)
+            keys = jax.random.split(key, self.hamiltonian_locality)
+
+            for locality in lindbladian_params:
+                lindbladian_params[locality] = amplitudes * jax.random.normal(
+                    keys[locality], lindbladian_params[locality].shape
+                )
+
         return lindbladian_params
+
+    def set_hamiltonian_params(self, hamiltonian_params: dict):
+        """
+        Sets the Hamiltonian parameters.
+        """
+
+        for locality, params_at_locality in hamiltonian_params.items():
+            if isinstance(params_at_locality, dict):
+
+                print("Settings params will assume only one connection")
+                for key, param in params_at_locality.items():
+                    # Convert key to index
+                    idx = ["xyz".index(key[i]) for i in range(len(key))]
+                    self.hamiltonian_params[locality] = (
+                        self.hamiltonian_params[locality].at[0, *idx].set(param)
+                    )
+
+            else:
+                self.hamiltonian_params[locality] = params_at_locality
+
+    def set_lindbladian_params(self, lindbladian_params: dict):
+        """
+        Sets the Lindbladian parameters.
+        """
+
+        for locality, params_at_locality in lindbladian_params.items():
+            if isinstance(params_at_locality, dict):
+
+                for connection, params_at_connection in params_at_locality.items():
+
+                    print("Settings params will assume only one connection")
+                    for key, param in params_at_locality.items():
+                        # Convert key to index
+                        idx = ["ixyz".index(key[i]) for i in range(len(key))]
+                        self.lindbladian_params[locality] = (
+                            self.lindbladian_params[locality].at[0, *idx].set(param)
+                        )
+
+            else:
+                self.lindbladian_params[locality] = params_at_locality
 
     def get_hamiltonian_generator(self):
         """

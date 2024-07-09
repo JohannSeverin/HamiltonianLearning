@@ -115,6 +115,9 @@ class StatePreparation:
         self.initial_states = initial_states
         self.perfect_state_preparation = perfect_state_preparation
 
+        if not perfect_state_preparation:
+            self.state_preparation_params = jnp.zeros((self.n_qubits))
+
     def get_initial_state_generator(self):
 
         if self.perfect_state_preparation:
@@ -130,15 +133,13 @@ class StatePreparation:
 
             @jax.jit
             def generator(state_preparation_params):
-                # state_preparation_params = jnp.array([0.1, 0.2])
-
                 # Find the mixed state contributions using temperature like softmax
                 ground_states_diag = jnp.zeros((self.n_qubits, 2))
                 ground_states_diag = ground_states_diag.at[:, 0].set(1.0)
                 ground_states_diag = ground_states_diag.at[:, 1].set(
-                    jnp.abs(state_preparation_params)
+                    state_preparation_params
                 )
-                ground_states_diag = jax.nn.softmax(-ground_states_diag, axis=-1)
+                ground_states_diag = jax.nn.softmax(ground_states_diag, axis=-1)
 
                 # Get the ground states for individual qubits
                 ground_states = jax.vmap(jnp.diag)(ground_states_diag)
