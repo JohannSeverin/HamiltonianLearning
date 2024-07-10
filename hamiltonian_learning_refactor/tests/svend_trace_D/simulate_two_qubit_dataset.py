@@ -39,8 +39,8 @@ QUBIT_T1 = [30e-6, 30e-6]  # s
 QUBIT_T2 = [30e-6, 30e-6]  # s
 
 # Correlated decay
-QUBIT_T1_CORRELATED = 30e-7  # s
-QUBIT_T2_CORRELATED = 30e-7  # s
+QUBIT_T1_CORRELATED = np.inf # 30e-7  # s
+QUBIT_T2_CORRELATED = np.inf # 30e-7  # s
 
 # Define the initial state on the basis of temperature
 TEMPERATURE = [0, 0]  # [50e-3, 60e-3]  # K
@@ -124,7 +124,7 @@ initial_state = tensor(
 ### Define the Hamiltonian ###
 
 # Single qubit terms
-from qutip import sigmaz, identity, tensor
+from qutip import sigmaz, identity, tensor, sigmax, sigmay
 
 # Remove single qubit hamiltonian such that we are in the rotating frame
 single_qubit_hamiltonian = 0 * (
@@ -276,6 +276,31 @@ for key, value in attributes.items():
 
 dataset.to_zarr(f"{NAME}.zarr", mode="w")
 
+
+shape = [NPOINTS] + NQUBITS * [len(INITIAL_GATES)] + NQUBITS * [len(EXPECTATION_OPERATORS)]
+expectation_values.reshape(*shape)
+
+dataset_reshaped = xr.Dataset()
+
+dims = ["time"] + [f"init{i}" for i in range(NQUBITS)] + [f"exp{i}" for i in range(NQUBITS)]
+coords = {
+    "time": np.linspace(0, DURATION / TIME_UNIT, NPOINTS),
+    "init0": list(INITIAL_GATES),
+    "init1": list(INITIAL_GATES),
+    "exp0": list(EXPECTATION_OPERATORS),
+    "exp1": list(EXPECTATION_OPERATORS),
+}
+
+dataset_reshaped["expectation_values"] = xr.DataArray(
+    expectation_values.reshape(*shape),
+    dims=dims,
+    coords=coords,
+)
+
+dataset_reshaped.to_zarr(F"data/{NAME}_reshaped.zarr", mode = "w")
+
+# dataset.to_zarr(f"{NAME}_reshaped.zarr", mode="w")
+
 ####################
 ### Plot Results ###
 ####################
@@ -305,7 +330,7 @@ def update_plot(initial_state, expectation_operator):
         dataset.sel(initial_gate = initial_state, expectation=expectation_operator).expectation_values.values
     )
 
-    ax.scatter(x, y, c = f"C{i}", label = "Expectation Value")
+    ax.scatter(x, y, c = f"C0", label = "Expectation Value")
 
     ax.set(
         xlabel="Time [ns]",
