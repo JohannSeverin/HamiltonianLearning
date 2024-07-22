@@ -81,7 +81,7 @@ class Measurements:
         self.params = None  # EMPTY FOR NOW
         self.clip = clip
 
-    def get_squared_difference_function(self):
+    def get_squared_difference_function(self, equal_weights: bool = False):
 
         if self.perfect_measurement:
 
@@ -103,7 +103,10 @@ class Measurements:
 
             std_estimate = jnp.sqrt(probs * (1 - probs)) / jnp.sqrt(samples)
 
-            diffs = (probs - data / samples) ** 2 / std_estimate**2
+            if equal_weights:
+                diffs = (probs - data / samples) ** 2
+            else:
+                diffs = (probs - data / samples) ** 2 / std_estimate**2
 
             return jnp.sum(diffs)
 

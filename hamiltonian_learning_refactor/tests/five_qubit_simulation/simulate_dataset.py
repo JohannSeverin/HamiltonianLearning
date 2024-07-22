@@ -14,7 +14,7 @@ import qutip
 ################################################
 
 # Setup parameters for the qubits
-NQUBITS = 2
+NQUBITS = 5
 
 # Simulation parameters
 DURATION = 10e-6
@@ -24,24 +24,35 @@ SAMPLES = 1000
 TIME_UNIT = 1e-9
 
 # Define single qubit parameters
-QUBIT_FREQUENCY = [5.2e9, 5.8e9]  # Hz
-QUBIT_FREQUENCY_OFFSET = [-450e3, +150e3]  # Hz
-QUBIT_ANHARMONICITY = [-300e6, -300e6]  # Hz
+QUBIT_FREQUENCY = [5.2e9, 5.8e9, 4.2e9, 5.4e9, 4.9e9]  # Hz
+QUBIT_FREQUENCY_OFFSET = [-450e3, +150e3, 50e3, 5e3, -100e3]  # Hz
+QUBIT_ANHARMONICITY = [-300e6, -300e6, -300e6, -300e6, -300e6]  # Hz
 
 # Two qubit parameters. This will be an x - x coupling in rotating frame
-QUBIT_QUBIT_COUPLING_X = 15e3  # Hz
-QUBIT_QUBIT_COUPLING_Z = 50e3  # Hz
+QUBIT_QUBIT_Z_COUPLINGS = {
+    (0, 2): 100e3,
+    (1, 2): 40e3,
+    (3, 2): 50e3,
+    (4, 2): 60e3,
+}
+
+QUBIT_QUBIT_X_COUPLINGS = {
+    (0, 2): 15e3,
+    (1, 2): 20e3,
+    (3, 2): 25e3,
+    (4, 2): 30e3,
+}
 
 # Decoherence channels. There will be no two-local decoherences in this simulation
-QUBIT_T1 = [30e-6, 30e-6]  # s
-QUBIT_T2 = [30e-6, 30e-6]  # s
+QUBIT_T1 = [30e-6, 30e-6, 30e-6, 30e-6, 30e-6]  # s
+QUBIT_T2 = [30e-6, 30e-6, 30e-6, 30e-6, 30e-6]  # s
 
 # Define the initial state on the basis of temperature
-TEMPERATURE = [50e-3, 60e-3]  # K
+TEMPERATURE = [50e-3, 60e-3, 50e-3, 40e-3, 25e-3]  # K
 
 # Define readout error probabilities. This should be enough to reconstruct the matrix
-P0_GIVEN_0 = [0.98, 0.95]
-P1_GIVEN_1 = [0.97, 0.94]
+P0_GIVEN_0 = [0.98, 0.95, 0.95, 0.95, 0.95]
+P1_GIVEN_1 = [0.97, 0.94, 0.94, 0.94, 0.94]
 
 from qutip.qip.operations import ry, rx
 
@@ -70,8 +81,8 @@ attributes = {
     "QUBIT_FREQUENCY": QUBIT_FREQUENCY,
     "QUBIT_FREQUENCY_OFFSET": QUBIT_FREQUENCY_OFFSET,
     "QUBIT_ANHARMONICITY": QUBIT_ANHARMONICITY,
-    "QUBIT_QUBIT_COUPLING_X": QUBIT_QUBIT_COUPLING_X,
-    "QUBIT_QUBIT_COUPLING_Z": QUBIT_QUBIT_COUPLING_Z,
+    "QUBIT_QUBIT_COUPLING_X": QUBIT_QUBIT_X_COUPLINGS,
+    "QUBIT_QUBIT_COUPLING_Z": QUBIT_QUBIT_Z_COUPLINGS,
     "QUBIT_T1": QUBIT_T1,
     "QUBIT_T2": QUBIT_T2,
     "TEMPERATURE": TEMPERATURE,
@@ -91,27 +102,25 @@ from scipy.constants import Boltzmann, Planck
 qubit_occupations = [
     (
         np.array(
-            [1, np.exp(-Planck * QUBIT_FREQUENCY[0] / (TEMPERATURE[0] * Boltzmann))]
+            [1, np.exp(-Planck * QUBIT_FREQUENCY[i] / (TEMPERATURE[i] * Boltzmann))]
         )
-        if TEMPERATURE[0] > 0
+        if TEMPERATURE[i] > 0
         else np.array([1, 0])
-    ),
-    (
-        np.array(
-            [1, np.exp(-Planck * QUBIT_FREQUENCY[1] / (TEMPERATURE[1] * Boltzmann))]
-        )
-        if TEMPERATURE[0] > 0
-        else np.array([1, 0])
-    ),
+    )
+    for i in range(NQUBITS)
 ]
+
 
 if TEMPERATURE[0] > 0:
     for i in range(NQUBITS):
         qubit_occupations[i] /= np.sum(qubit_occupations[i])
 
 initial_state = tensor(
-    qubit_occupations[0][0] * fock_dm(2, 0) + qubit_occupations[0][1] * fock_dm(2, 1),
-    qubit_occupations[1][0] * fock_dm(2, 0) + qubit_occupations[1][1] * fock_dm(2, 1),
+    *[
+        qubit_occupations[i][0] * fock_dm(2, 0)
+        + qubit_occupations[i][1] * fock_dm(2, 1)
+        for i in range(NQUBITS)
+    ]
 )
 
 ### Define the Hamiltonian ###
@@ -120,87 +129,81 @@ initial_state = tensor(
 from qutip import sigmaz, identity, tensor
 
 # Remove single qubit hamiltonian such that we are in the rotating frame
-single_qubit_hamiltonian = 0 * (
-    2 * np.pi * TIME_UNIT * QUBIT_FREQUENCY[0] * tensor(sigmaz(), identity(2)) / 2
-    + 2 * np.pi * TIME_UNIT * QUBIT_FREQUENCY[1] * tensor(identity(2), sigmaz()) / 2
-)
+single_qubit_hamiltonian = 0  # Rotating frame
+
 
 # From offset
-single_qubit_hamiltonian += (
-    2
-    * np.pi
-    * TIME_UNIT
-    * QUBIT_FREQUENCY_OFFSET[0]
-    * tensor(sigmaz(), identity(2))
-    / 2
-    + 2
-    * np.pi
-    * TIME_UNIT
-    * QUBIT_FREQUENCY_OFFSET[1]
-    * tensor(identity(2), sigmaz())
-    / 2
-)
+for i in range(NQUBITS):
+    operator = [identity(2) for _ in range(NQUBITS)]
+    operator[i] = sigmaz()
+    single_qubit_hamiltonian += (
+        2 * np.pi * TIME_UNIT * QUBIT_FREQUENCY_OFFSET[i] * tensor(*operator) / 2
+    )
 
 
 # Two qubit terms
 from qutip import sigmax
 
 # X-X coupling
-two_qubit_hamiltonian = (
-    2 * np.pi * TIME_UNIT * QUBIT_QUBIT_COUPLING_X * tensor(sigmax(), sigmax())
-)
+two_qubit_hamiltonian = qutip.qzero([2] * NQUBITS)
 
-# Z-Z coupling
-two_qubit_hamiltonian += (
-    2 * np.pi * TIME_UNIT * QUBIT_QUBIT_COUPLING_Z * tensor(sigmaz(), sigmaz())
-)
+for (i, j), coupling in QUBIT_QUBIT_X_COUPLINGS.items():
+    operator = [identity(2) for _ in range(NQUBITS)]
+    operator[i] = sigmax()
+    operator[j] = sigmax()
+
+    two_qubit_hamiltonian += 2 * np.pi * TIME_UNIT * coupling * tensor(operator)
+
+for (i, j), coupling in QUBIT_QUBIT_Z_COUPLINGS.items():
+    operator = [identity(2) for _ in range(NQUBITS)]
+    operator[i] = sigmaz()
+    operator[j] = sigmaz()
+
+    two_qubit_hamiltonian += 2 * np.pi * TIME_UNIT * coupling * tensor(operator)
+
 
 ### Define the collapse operators ###
 from qutip import destroy
 
 collapse_operators = []
 
-collapse_operators += [
-    np.sqrt(1 / (2 * QUBIT_T1[0]) * TIME_UNIT) * tensor(destroy(2), identity(2)),
-    np.sqrt(1 / (2 * QUBIT_T1[1]) * TIME_UNIT) * tensor(identity(2), destroy(2)),
-]
+for i in range(NQUBITS):
+    operators = [identity(2) for _ in range(NQUBITS)]
+    operators[i] = destroy(2)
 
-dephasing_rates = [1 / QUBIT_T2[i] - 1 / (2 * QUBIT_T1[i]) for i in range(NQUBITS)]
+    collapse_operators.append(
+        np.sqrt(1 / (2 * QUBIT_T1[i]) * TIME_UNIT) * tensor(operators)
+    )
 
-collapse_operators += [
-    np.sqrt(dephasing_rates[0] * TIME_UNIT) * tensor(sigmaz(), identity(2)),
-    np.sqrt(dephasing_rates[1] * TIME_UNIT) * tensor(identity(2), sigmaz()),
-]
+for i in range(NQUBITS):
+    operators = [identity(2) for _ in range(NQUBITS)]
+    operators[i] = sigmaz()
+
+    collapse_operators.append(np.sqrt(1 / QUBIT_T2[i] * TIME_UNIT) * tensor(operators))
 
 
 ### Define readout POVMs ###
 M0s = [
-    np.sqrt(P0_GIVEN_0[0]) * fock_dm(2, 0) + np.sqrt(1 - P1_GIVEN_1[0]) * fock_dm(2, 1),
-    np.sqrt(P0_GIVEN_0[1]) * fock_dm(2, 0) + np.sqrt(1 - P1_GIVEN_1[1]) * fock_dm(2, 1),
+    np.sqrt(P0_GIVEN_0[i]) * fock_dm(2, 0) + np.sqrt(1 - P1_GIVEN_1[i]) * fock_dm(2, 1)
+    for i in range(NQUBITS)
 ]
 
 M1s = [
-    np.sqrt(1 - P0_GIVEN_0[0]) * fock_dm(2, 0) + np.sqrt(P1_GIVEN_1[0]) * fock_dm(2, 1),
-    np.sqrt(1 - P0_GIVEN_0[1]) * fock_dm(2, 0) + np.sqrt(P1_GIVEN_1[1]) * fock_dm(2, 1),
+    np.sqrt(1 - P0_GIVEN_0[i]) * fock_dm(2, 0) + np.sqrt(P1_GIVEN_1[i]) * fock_dm(2, 1)
+    for i in range(NQUBITS)
 ]
 
-Ms = [
-    tensor(M0s[0], M0s[1]),
-    tensor(M0s[0], M1s[1]),
-    tensor(M1s[0], M0s[1]),
-    tensor(M1s[0], M1s[1]),
-]
+Ms_single = [[M0, M1] for M0, M1 in zip(M0s, M1s)]
+Ms = []
+
+from itertools import product
+
+for bit_string in product([0, 1], repeat=NQUBITS):
+    Ms.append(tensor(*[Ms_single[i][bit_string[i]] for i in range(NQUBITS)]))
 
 
 ### Corating transformation ###
 H0 = single_qubit_hamiltonian
-
-
-def corotating_transformation(state: qutip.Qobj, t: float):
-    transformation = (1j * t * H0).expm()
-    state = state.transform(transformation)
-    return state
-
 
 ### Define the initial and final gates ###
 from itertools import product
@@ -236,14 +239,16 @@ coords = {
     "time": np.linspace(0, DURATION / TIME_UNIT, NPOINTS),
     "initial_gate": list(initial_gates),
     "final_gate": list(final_gates),
-    "outcome": ["00", "01", "10", "11"],
+    "outcome": [
+        "".join(bit_string) for bit_string in product(["0", "1"], repeat=NQUBITS)
+    ],
 }
 
 measurement_probabilities = np.zeros(shape)
 outcome = np.zeros(shape)
 
 
-for init_index, key_init in tqdm(enumerate(initial_gates)):
+for init_index, key_init in tqdm(enumerate(initial_gates), total=len(initial_gates)):
     initial_state_i = (
         initial_gates[key_init] * initial_state * initial_gates[key_init].dag()
     )

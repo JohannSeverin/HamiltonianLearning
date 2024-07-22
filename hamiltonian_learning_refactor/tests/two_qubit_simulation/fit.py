@@ -6,7 +6,7 @@ import xarray as xr
 
 from functools import partial
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 jax.default_device(jax.devices("cpu")[0])
 
 dataset = xr.load_dataset("dataset.zarr", engine="zarr")
@@ -24,12 +24,12 @@ MEASUREMENT_BASIS = ["Z", "X", "Y"]
 SAMPLES = dataset.attrs["SAMPLES"]
 
 # Model parameters
-# PREPARATION_LOCALITY = 1
+PERFECT_PREPARATION = True
 # MEASUREMENT_LOCALITY = 1
-HAMILTONIAN_LOCALITY = 2
+HAMILTONIAN_LOCALITY = 1
 LINDLAD_LOCALITY = 0
 
-CLIP = 1e-3
+CLIP = 3e-2 # Clip harder if no dissipation or SPAM
 
 # Solver parameters
 INITIAL_STEPSIZE = 1.0
@@ -41,13 +41,12 @@ TOLERANCE = 1e-6
 
 # Optimizer Params
 LOSS = "likelihood" # "squared_diffrence" OR "likelihood"
+USE_WEIGHTS = True # If squared differences this determines if we should weigh the points according to the estimated std
 
-LEARNING_RATE = 1e-5
+LEARNING_RATE = 1e-4
 ITERATIONS = 1000
-HAMILTONIAN_GUESS_ORDER = 1e-4
+HAMILTONIAN_GUESS_ORDER = 1e-3
 LINDLADIAN_GUESS_ORDER = 1e-5
-
-
 
 
 # Define the parameterization classes
@@ -55,7 +54,7 @@ LINDLADIAN_GUESS_ORDER = 1e-5
 # Something Like this  should be imported - all which contains classes that generates functions
 # given the system and model parameters
 sys.path.append(
-    "/home/archi1/projects/HamiltonianLearning/hamiltonian_learning_refactor"
+    "/root/projects/HamiltonianLearning/hamiltonian_learning_refactor"
 )
 from hamiltonian_learning import (
     Measurements,
@@ -75,7 +74,7 @@ dynamics = Parameterization(
 state_preparation = StatePreparation(
     NQUBITS,
     initial_states=INIT_STATES,
-    perfect_state_preparation=False,
+    perfect_state_preparation=PERFECT_PREPARATION,
 )
 
 measurements = Measurements(
@@ -101,26 +100,17 @@ solver = Solver(
 # state_preparation_params = state_preparation.params
 # measurement_params = measurements.params
 
-# hamiltonian_params = dynamics.hamiltonian_params
+hamiltonian_params = dynamics.hamiltonian_params
 lindbladian_params = dynamics.lindbladian_params
 state_preparation_params = - 3e-3 * jnp.ones_like(state_preparation.state_preparation_params)
 
-hamiltonian_params
-
-# hamiltonian_params[1] = hamiltonian_params[1].at[0, -1].set(- 2 * jnp.pi * 450e-6/2)
-# hamiltonian_params[1] = hamiltonian_params[1].at[1, -1].set(2 * jnp.pi * 150e-6/2)
-# # dynamics.set_hamiltonian_params({1: dict(z)})
-# dynamics.set_hamiltonian_params({2: dict(xx = 2 * jnp.pi * 140e-6, zz = 2 * jnp.pi *  100e-6)})
-# lindbladian_params[1] = lindbladian_params[1].at[0, -1, -1].set(0.5 * 3.3333e-5 ** 0.5)
-# lindbladian_params[1] = lindbladian_params[1].at[1, -1, -1].set(0.5 * 3.3333e-5 ** 0.5)
-# lindbladian_params
 
 
 # Get the generators to convert the parameters to states or operators
 generate_initial_states = state_preparation.get_initial_state_generator()
 generate_hamiltonian = dynamics.get_hamiltonian_generator()
 generate_lindbladian = dynamics.get_jump_operator_generator()
-calculate_log_likelihood = measurements.get_squared_difference_function() if LOSS == "squared_difference" else measurements.get_log_likelihood_function()
+calculate_log_likelihood = measurements.get_squared_difference_function(equal_weights = not USE_WEIGHTS) if LOSS == "squared_difference" else measurements.get_log_likelihood_function()
 evolve_states = solver.create_solver()
 
 
@@ -130,14 +120,13 @@ evolve_states = solver.create_solver()
 )
 def loss_fn(
     params,
-    data,
 ):
     """
     Loss function to be minimized
     """
     state_preparation_params, hamiltonian_params, lindbladian_params = params
 
-    initial_states = generate_initial_states(state_preparation_params * 1e3)
+    initial_states = generate_initial_states(3e3 * state_preparation_params) # .reshape(-1, 4, 4)
     hamiltonian = generate_hamiltonian(hamiltonian_params)
     lindblad_operators = generate_lindbladian(lindbladian_params)
 
@@ -147,7 +136,7 @@ def loss_fn(
     # # Calculate the log probability
     log_probability = calculate_log_likelihood(evolved_states, data, samples=SAMPLES)
 
-    return log_probability
+    return log_probability / data.size
 
 
 loss_and_grad = jax.value_and_grad(loss_fn, argnums=(0))
@@ -156,6 +145,12 @@ loss_and_grad = jax.value_and_grad(loss_fn, argnums=(0))
 
 from optax import adam, apply_updates
 
+# Test of linesearch
+# from optax import sgd, scale_by_backtracking_linesearch, chain
+
+# opt = chain(sgd(LEARNING_RATE), scale_by_backtracking_linesearch(15, max_learning_rate=1e-3))
+
+
 # Init
 params = (state_preparation_params, hamiltonian_params, lindbladian_params)
 opt = adam(LEARNING_RATE)
@@ -163,8 +158,8 @@ state = opt.init(params)
 
 # Update
 for i in range(ITERATIONS):
-    loss, grads = loss_and_grad(params, data)
-    updates, state = opt.update(grads, state)
+    loss, grads = loss_and_grad(params) #, data)
+    updates, state = opt.update(grads, state, params, value = loss, grad = grads, value_fn = loss_fn, has_aux = True)
     params = apply_updates(params, updates)
 
     print(f"Iteration {i:03d} - Loss: {loss:.3e}")
@@ -173,7 +168,7 @@ for i in range(ITERATIONS):
 
 # Test the functions
 state_preparation_params, hamiltonian_params, lindbladian_params = params
-states = generate_initial_states(state_preparation_params  * 1e3)
+states = generate_initial_states(3e3 * state_preparation_params)#.reshape(-1, 4, 4)
 hamiltonian = generate_hamiltonian(hamiltonian_params)
 lindblad_operators = generate_lindbladian(lindbladian_params)
 evolved_states = evolve_states(states, hamiltonian, lindblad_operators)
@@ -185,7 +180,7 @@ probs = measurements.calculate_measurement_probabilities(evolved_states)
 simulated = dataset.measurement_probabilities.copy()
 simulated.values = probs
 
-loss_fn(params, data)
+print("final loss: " + str(loss_fn(params))) # , data
 
 ##########################
 # Plot the results       #

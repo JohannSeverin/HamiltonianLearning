@@ -117,14 +117,19 @@ class StatePreparation:
 
         if not perfect_state_preparation:
             self.state_preparation_params = jnp.zeros((self.n_qubits))
+        else:
+            self.state_preparation_params = jnp.zeros(())
 
     def get_initial_state_generator(self):
 
         if self.perfect_state_preparation:
 
             @jax.jit
-            def generator():
-                return _pauli_state_combinations(self.initial_states, self.n_qubits)
+            def generator(state_preparation_params=None):
+                # Dummy input to match the signature
+                return _pauli_state_combinations(
+                    self.initial_states, self.n_qubits
+                ).reshape((-1, 2**self.n_qubits, 2**self.n_qubits))
 
         else:
             transformations = _basis_transformations_combinations(
