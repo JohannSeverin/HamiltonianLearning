@@ -18,7 +18,7 @@ NQUBITS = 5
 
 # Simulation parameters
 DURATION = 10e-6
-NPOINTS = 41
+NPOINTS = 21
 SAMPLES = 1000
 
 TIME_UNIT = 1e-9
@@ -303,7 +303,7 @@ dataset = xr.Dataset(
 )
 
 for key, value in attributes.items():
-    dataset.attrs[key] = value
+    dataset.attrs[key] = str(value)
 
 dataset.to_zarr("dataset.zarr", mode="w")
 

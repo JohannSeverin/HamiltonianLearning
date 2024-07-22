@@ -16,6 +16,14 @@ jax.config.update("jax_enable_x64", True)
 
 from typing import List
 
+#### Measurement class ####
+from pathlib import Path
+
+
+# First iteration only supports perfect measurements
+from tensorflow_probability.substrates.jax.distributions import multinomial
+from typing import Literal
+
 
 # Operator to define states from strings
 _basis_transformations_names = {
@@ -57,12 +65,44 @@ def _apply_gates(states, transformations):
     )
 
 
-#### Measurement class ####
-from pathlib import Path
+def _extract_diag_from_changed_basis(states, basis_transformations):
+    return jnp.einsum(
+        "ijk, ...kl, ilj -> ...ij",
+        basis_transformations,
+        states,
+        basis_transformations.conj().transpose((0, 2, 1)),
+    )
 
 
-# First iteration only supports perfect measurements
-from tensorflow_probability.substrates.jax.distributions import multinomial
+# Loss functions. Should take probabilities, data and number of samples and ret
+
+
+# Squared difference loss
+def squared_loss(probs, data, samples):
+    """
+    Calculate the squared loss between the probabilities and the data
+    """
+    return jnp.sum((probs - data / samples) ** 2)
+
+
+def multinomial_likelihood(probs, data, samples):
+    """
+    Calculate the multinomial likelihood
+    """
+    return (
+        multinomial.Multinomial(
+            total_count=samples,
+            probs=probs,
+        )
+        .log_prob(data)
+        .sum()
+    )
+
+
+available_losses = {
+    "squared_difference": squared_loss,
+    "multinomial": multinomial_likelihood,
+}
 
 
 class Measurements:
@@ -70,76 +110,162 @@ class Measurements:
     def __init__(
         self,
         n_qubits: int,
+        samples: int,
         basis: list[str] = ["Z"],
         perfect_measurement: bool = True,
         clip: float = 1e-10,
+        loss: Literal["squared_difference", "multinomial"] = "squared_difference",
+        batch_size: int = 1,
     ):
         self.n_qubits = n_qubits
         self.basis = basis
         self.perfect_measurement = perfect_measurement
+        self.samples = samples
 
         self.params = None  # EMPTY FOR NOW
         self.clip = clip
 
-    def get_squared_difference_function(self, equal_weights: bool = False):
+        self.loss = loss
+        self.batch_size = batch_size
+
+    def get_loss_fn(self):
+        if self.batch_size > 1:
+            return self._get_looped_loss_fn()
+        else:
+            inner_func = available_losses[self.loss]
+
+            # Defined for perfect measurements
+            if self.perfect_measurement:
+
+                # Get basis transformation
+                basis_transformations = _get_basis_transformation_combinations(
+                    self.basis, self.n_qubits
+                )
+
+                # The function to return
+                @partial(jax.jit)
+                def loss_fn(states, data):
+                    probs = _extract_diag_from_changed_basis(
+                        states, basis_transformations
+                    ).real
+                    return inner_func(probs, data, self.samples)
+
+                # Return the function to be used
+                return loss_fn
+
+    def _get_looped_loss_fn(self):
+        inner_func = available_losses[self.loss]
 
         if self.perfect_measurement:
+
+            # Function allowing us to use jax.scan to separate data and measurement basis into batches
+            def batched_function(carry, xs, states):
+                # Unpack
+                cumulative_loss = carry
+                transformations, data = xs
+
+                # Calculate the new loss
+                new_loss = _extract_diag_from_changed_basis(
+                    states, transformations
+                ).real
+                cumulative_loss += inner_func(new_loss, data, self.samples)
+
+                # Return cumulative loss and the new one for storing
+                return cumulative_loss, new_loss
 
             basis_transformations = _get_basis_transformation_combinations(
                 self.basis, self.n_qubits
             )
-
-        def _basis_change(states):
-            return _apply_gates(states, basis_transformations)
-
-        def _extract_diag(states):
-            return jnp.einsum("...ii -> ...i", states)
-
-        @partial(jax.jit, static_argnums=(2))
-        def _squared_diffs(states, data, samples):
-            states = _basis_change(states)
-            diag = _extract_diag(states)
-            probs = jnp.clip(diag.real, self.clip, 1 - self.clip)
-
-            std_estimate = jnp.sqrt(probs * (1 - probs)) / jnp.sqrt(samples)
-
-            if equal_weights:
-                diffs = (probs - data / samples) ** 2
-            else:
-                diffs = (probs - data / samples) ** 2 / std_estimate**2
-
-            return jnp.sum(diffs)
-
-        return _squared_diffs
-
-    def get_log_likelihood_function(self):
-
-        if self.perfect_measurement:
-
-            basis_transformations = _get_basis_transformation_combinations(
-                self.basis, self.n_qubits
-            )
-
-            def _basis_change(states):
-                return _apply_gates(states, basis_transformations)
-
-            def _extract_diag(states):
-                return jnp.einsum("...ii -> ...i", states)
 
             @partial(jax.jit, static_argnums=(2))
-            def _log_prob(states, data, samples):
-                states = _basis_change(states)
-                diag = _extract_diag(states)
-                probs = jnp.clip(diag.real, self.clip, 1 - self.clip)
+            def loss_fn(states, data):
+                # move measurement basis to first position and split in batch size
+                data_batched = jnp.moveaxis(data, -2, 0)
 
-                log_prob_for_measurement = multinomial.Multinomial(
-                    total_count=samples,
-                    probs=probs,
-                ).log_prob(data)
+                data_batched = data_batched.reshape(
+                    -1, self.batch_size, data_batched.shape[1:]
+                )
+                basis_transformations_batched = basis_transformations.reshape(
+                    -1, self.batch_size, basis_transformations.shape[1:]
+                )
 
-                return -jnp.sum(log_prob_for_measurement)
+                # Run the scan function
+                cumulative_loss, _ = jax.lax.scan(
+                    partial(batched_function, states=states),
+                    0,
+                    (basis_transformations_batched, data_batched),
+                )
 
-            return _log_prob
+                return cumulative_loss
+
+            return loss_fn
+
+    # def get_squared_difference_function(self, equal_weights: bool = False):
+
+    #     if self.perfect_measurement:
+
+    #         basis_transformations = _get_basis_transformation_combinations(
+    #             self.basis, self.n_qubits
+    #         )
+
+    #     def _extract_diag_from_changed_basis(states, basis_transformations):
+    #         return jnp.einsum(
+    #             "ijk, ...kl, ilj -> ...ij",
+    #             basis_transformations,
+    #             states,
+    #             basis_transformations.conj().transpose((0, 2, 1)),
+    #         )
+
+    #     def _basis_change(states):
+    #         return _apply_gates(states, basis_transformations)
+
+    #     def _extract_diag(states):
+    #         return jnp.einsum("...ii -> ...i", states)
+
+    #     @partial(jax.jit, static_argnums=(2))
+    #     def _squared_diffs(states, data, samples):
+    #         diag = _extract_diag_from_changed_basis(states, basis_transformations)
+    #         probs = jnp.clip(diag.real, self.clip, 1 - self.clip)
+
+    #         std_estimate = jnp.sqrt(probs * (1 - probs)) / jnp.sqrt(samples)
+
+    #         if equal_weights:
+    #             diffs = (probs - data / samples) ** 2
+    #         else:
+    #             diffs = (probs - data / samples) ** 2 / std_estimate**2
+
+    #         return jnp.sum(diffs)
+
+    #     return _squared_diffs
+
+    # def get_log_likelihood_function(self):
+
+    #     if self.perfect_measurement:
+
+    #         basis_transformations = _get_basis_transformation_combinations(
+    #             self.basis, self.n_qubits
+    #         )
+
+    #         def _basis_change(states):
+    #             return _apply_gates(states, basis_transformations)
+
+    #         def _extract_diag(states):
+    #             return jnp.einsum("...ii -> ...i", states)
+
+    #         @partial(jax.jit, static_argnums=(2))
+    #         def _log_prob(states, data, samples):
+    #             states = _basis_change(states)
+    #             diag = _extract_diag(states)
+    #             probs = jnp.clip(diag.real, self.clip, 1 - self.clip)
+
+    #             log_prob_for_measurement = multinomial.Multinomial(
+    #                 total_count=samples,
+    #                 probs=probs,
+    #             ).log_prob(data)
+
+    #             return -jnp.sum(log_prob_for_measurement)
+
+    #         return _log_prob
 
     def generate_samples(self, states, samples: int, key: int = 0):
 

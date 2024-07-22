@@ -124,7 +124,7 @@ class Solver:
             else diffrax.ConstantStepSize()
         )
         self.adjoint = (
-            diffrax.BacksolveAdjoint(self.ode_solver)
+            diffrax.BacksolveAdjoint(solver=self.ode_solver)
             if adjoint
             else diffrax.RecursiveCheckpointAdjoint()
         )
