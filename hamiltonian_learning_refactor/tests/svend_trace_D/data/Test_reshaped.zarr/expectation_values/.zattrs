@@ -3,7 +3,9 @@
         "time",
         "init0",
         "init1",
-        "exp0",
-        "exp1"
+        "basis0",
+        "basis1",
+        "measurement_qubit0",
+        "measurement_qubit1"
     ]
 }

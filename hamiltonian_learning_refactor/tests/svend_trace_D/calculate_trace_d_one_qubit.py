@@ -79,4 +79,4 @@ ax.plot(x, np.poly1d(fit_params[-2:])(x), label="1st order")
 ax.set_xlabel("Time [ns]")
 ax.set_title(f"Expectation Value of {key}")
 
-linear_order[key] = fit_params[-2]
+fit_params[-2]

@@ -27,8 +27,8 @@
             "QUBIT_QUBIT_COUPLING_X": 15000.0,
             "QUBIT_QUBIT_COUPLING_Z": 50000.0,
             "QUBIT_T1": [
-                3e-05,
-                3e-05
+                Infinity,
+                Infinity
             ],
             "QUBIT_T2": [
                 3e-05,
@@ -44,63 +44,7 @@
         ".zgroup": {
             "zarr_format": 2
         },
-        "expectation/.zarray": {
-            "chunks": [
-                16
-            ],
-            "compressor": {
-                "blocksize": 0,
-                "clevel": 5,
-                "cname": "lz4",
-                "id": "blosc",
-                "shuffle": 1
-            },
-            "dtype": "<U2",
-            "fill_value": null,
-            "filters": null,
-            "order": "C",
-            "shape": [
-                16
-            ],
-            "zarr_format": 2
-        },
-        "expectation/.zattrs": {
-            "_ARRAY_DIMENSIONS": [
-                "expectation"
-            ]
-        },
-        "expectation_values/.zarray": {
-            "chunks": [
-                8,
-                36,
-                16
-            ],
-            "compressor": {
-                "blocksize": 0,
-                "clevel": 5,
-                "cname": "lz4",
-                "id": "blosc",
-                "shuffle": 1
-            },
-            "dtype": "<f8",
-            "fill_value": "NaN",
-            "filters": null,
-            "order": "C",
-            "shape": [
-                8,
-                36,
-                16
-            ],
-            "zarr_format": 2
-        },
-        "expectation_values/.zattrs": {
-            "_ARRAY_DIMENSIONS": [
-                "time",
-                "initial_gate",
-                "expectation"
-            ]
-        },
-        "initial_gate/.zarray": {
+        "initial/.zarray": {
             "chunks": [
                 36
             ],
@@ -120,9 +64,93 @@
             ],
             "zarr_format": 2
         },
-        "initial_gate/.zattrs": {
+        "initial/.zattrs": {
             "_ARRAY_DIMENSIONS": [
-                "initial_gate"
+                "initial"
+            ]
+        },
+        "measurement/.zarray": {
+            "chunks": [
+                36
+            ],
+            "compressor": {
+                "blocksize": 0,
+                "clevel": 5,
+                "cname": "lz4",
+                "id": "blosc",
+                "shuffle": 1
+            },
+            "dtype": "<U4",
+            "fill_value": null,
+            "filters": null,
+            "order": "C",
+            "shape": [
+                36
+            ],
+            "zarr_format": 2
+        },
+        "measurement/.zattrs": {
+            "_ARRAY_DIMENSIONS": [
+                "measurement"
+            ]
+        },
+        "measurement_probability/.zarray": {
+            "chunks": [
+                4,
+                36,
+                36,
+                4
+            ],
+            "compressor": {
+                "blocksize": 0,
+                "clevel": 5,
+                "cname": "lz4",
+                "id": "blosc",
+                "shuffle": 1
+            },
+            "dtype": "<f8",
+            "fill_value": "NaN",
+            "filters": null,
+            "order": "C",
+            "shape": [
+                8,
+                36,
+                36,
+                4
+            ],
+            "zarr_format": 2
+        },
+        "measurement_probability/.zattrs": {
+            "_ARRAY_DIMENSIONS": [
+                "time",
+                "initial",
+                "measurement",
+                "outcome"
+            ]
+        },
+        "outcome/.zarray": {
+            "chunks": [
+                4
+            ],
+            "compressor": {
+                "blocksize": 0,
+                "clevel": 5,
+                "cname": "lz4",
+                "id": "blosc",
+                "shuffle": 1
+            },
+            "dtype": "<U2",
+            "fill_value": null,
+            "filters": null,
+            "order": "C",
+            "shape": [
+                4
+            ],
+            "zarr_format": 2
+        },
+        "outcome/.zattrs": {
+            "_ARRAY_DIMENSIONS": [
+                "outcome"
             ]
         },
         "time/.zarray": {

@@ -20,8 +20,8 @@ NQUBITS = 2
 
 # Simulation parameters
 DURATION = 56e-9
-NPOINTS = 8 
-SAMPLES = 1000 # Not used can be introduced later
+NPOINTS = 8
+SAMPLES = 1000  # Not used can be introduced later
 
 TIME_UNIT = 1e-9
 
@@ -35,12 +35,12 @@ QUBIT_QUBIT_COUPLING_X = 15e3  # Hz
 QUBIT_QUBIT_COUPLING_Z = 50e3  # Hz
 
 # Decoherence channels. There will be no two-local decoherences in this simulation
-QUBIT_T1 = [30e-6, 30e-6]  # s
+QUBIT_T1 = [np.inf, np.inf]  # s
 QUBIT_T2 = [30e-6, 30e-6]  # s
 
 # Correlated decay
-QUBIT_T1_CORRELATED = np.inf # 30e-7  # s
-QUBIT_T2_CORRELATED = np.inf # 30e-7  # s
+QUBIT_T1_CORRELATED = np.inf  # 30e-5  # s
+QUBIT_T2_CORRELATED = np.inf  # 30e-5  # s
 
 # Define the initial state on the basis of temperature
 TEMPERATURE = [0, 0]  # [50e-3, 60e-3]  # K
@@ -60,11 +60,14 @@ INITIAL_GATES = {
 }
 
 # Transformations to measurement basis
-EXPECTATION_OPERATORS = {
-    "i": qutip.qeye(2),
-    "x": qutip.sigmax(),
-    "y": qutip.sigmay(),
-    "z": qutip.sigmaz(),
+# MEASUREMENT
+MEASUREMENT_BASIS = {
+    "z": qutip.qeye(2),  # Starts in z
+    "x": qutip.gates.ry(-np.pi / 2),  # Starts in x
+    "y": qutip.gates.rx(np.pi / 2),  # Starts in y
+    "-z": qutip.sigmax(),  # Start in -z
+    "-x": qutip.gates.ry(np.pi / 2),  # Start in -x
+    "-y": qutip.gates.rx(-np.pi / 2),  # Start in -y
 }
 
 
@@ -199,12 +202,10 @@ initial_gates = {}
 for keys in product(INITIAL_GATES, repeat=NQUBITS):
     initial_gates["".join(keys)] = tensor(*[INITIAL_GATES[key] for key in keys])
 
-expectation_operators = {}
+measurement_basis = {}
 
-for keys in product(EXPECTATION_OPERATORS, repeat=NQUBITS):
-    expectation_operators["".join(keys)] = tensor(
-        *[EXPECTATION_OPERATORS[key] for key in keys]
-    )
+for keys in product(MEASUREMENT_BASIS, repeat=NQUBITS):
+    measurement_basis["".join(keys)] = tensor(*[MEASUREMENT_BASIS[key] for key in keys])
 
 
 #######################
@@ -220,16 +221,19 @@ import xarray as xr
 
 dataset = xr.Dataset()
 
-dims = ["time", "initial_gate", "expectation"]
-shape = (NPOINTS, len(initial_gates), len(expectation_operators))
+dims = ["time", "initial", "measurement", "outcome"]
+shape = (NPOINTS, len(initial_gates), len(measurement_basis), 2**NQUBITS)
 
 coords = {
     "time": np.linspace(0, DURATION / TIME_UNIT, NPOINTS),
-    "initial_gate": list(initial_gates),
-    "expectation": list(expectation_operators),
+    "initial": list(initial_gates),
+    "measurement": list(measurement_basis),
+    "outcome": list("".join(i) for i in product(["0", "1"], repeat=NQUBITS)),
 }
 
-expectation_values = np.zeros(shape)
+measurement_probability = np.zeros(
+    (NPOINTS, len(initial_gates), len(measurement_basis), 2**NQUBITS)
+)
 
 
 for init_index, key_init in tqdm(enumerate(initial_gates)):
@@ -246,28 +250,25 @@ for init_index, key_init in tqdm(enumerate(initial_gates)):
     )
 
     for time_index, time in enumerate(result.times):
-        # state_rotated = corotating_transformation(result.states[time_index], time)
         state = result.states[time_index]
 
-        for operator_index, operator in enumerate(expectation_operators):
-
-            operator_to_measure = expectation_operators[operator]
-
-            # Find expvals
-            exp_val = qutip.expect(operator_to_measure, state)
-
-            expectation_values[time_index, init_index, operator_index] = exp_val
+        for transformation_index, transformation_key in enumerate(measurement_basis):
+            transformation = measurement_basis[transformation_key]
+            state_transformed = transformation @ state @ transformation.dag()
+            measurement_probability[time_index, init_index, transformation_index] = (
+                state_transformed.diag()
+            )
 
 
-expectation_dataset = xr.DataArray(
-    expectation_values,
+measurements_dataset = xr.DataArray(
+    measurement_probability,
     dims=dims,
     coords=coords,
 )
 
 dataset = xr.Dataset(
     {
-        "expectation_values": expectation_dataset,
+        "measurement_probability": measurements_dataset,
     }
 )
 
@@ -277,93 +278,106 @@ for key, value in attributes.items():
 dataset.to_zarr(f"{NAME}.zarr", mode="w")
 
 
-shape = [NPOINTS] + NQUBITS * [len(INITIAL_GATES)] + NQUBITS * [len(EXPECTATION_OPERATORS)]
-expectation_values.reshape(*shape)
+shape = (
+    [NPOINTS]
+    + NQUBITS * [len(INITIAL_GATES)]
+    + NQUBITS * [len(MEASUREMENT_BASIS)]
+    + NQUBITS * [2]
+)
+measurement_probability.reshape(*shape)
 
 dataset_reshaped = xr.Dataset()
 
-dims = ["time"] + [f"init{i}" for i in range(NQUBITS)] + [f"exp{i}" for i in range(NQUBITS)]
+dims = (
+    ["time"]
+    + [f"init{i}" for i in range(NQUBITS)]
+    + [f"basis{i}" for i in range(NQUBITS)]
+    + [f"measurement_qubit{i}" for i in range(NQUBITS)]
+)
 coords = {
     "time": np.linspace(0, DURATION / TIME_UNIT, NPOINTS),
     "init0": list(INITIAL_GATES),
     "init1": list(INITIAL_GATES),
-    "exp0": list(EXPECTATION_OPERATORS),
-    "exp1": list(EXPECTATION_OPERATORS),
+    "basis0": list(MEASUREMENT_BASIS),
+    "basis1": list(MEASUREMENT_BASIS),
+    "measurement_qubit0": list(range(NQUBITS)),
+    "measurement_qubit1": list(range(NQUBITS)),
 }
 
+
 dataset_reshaped["expectation_values"] = xr.DataArray(
-    expectation_values.reshape(*shape),
+    measurement_probability.reshape(*shape),
     dims=dims,
     coords=coords,
 )
 
-dataset_reshaped.to_zarr(F"data/{NAME}_reshaped.zarr", mode = "w")
+dataset_reshaped.to_zarr(f"data/{NAME}_reshaped.zarr", mode="w")
 
 # dataset.to_zarr(f"{NAME}_reshaped.zarr", mode="w")
 
 ####################
 ### Plot Results ###
 ####################
-%matplotlib widget
-import matplotlib.pyplot as plt
-from ipywidgets import interact, Dropdown
-from IPython.display import display
+# %matplotlib widget
+# import matplotlib.pyplot as plt
+# from ipywidgets import interact, Dropdown
+# from IPython.display import display
 
 
-# We plot the z1, z2, and z1z2 values of the states
-fig, ax = plt.subplots(1, 1, figsize=(8, 5))
+# # We plot the z1, z2, and z1z2 values of the states
+# fig, ax = plt.subplots(1, 1, figsize=(8, 5))
 
-x = dataset.time
+# x = dataset.time
 
-# Get the initial states and measurement basis options
-initial_states_options = dataset.initial_gate.values
-expectation_options = dataset.expectation.values
+# # Get the initial states and measurement basis options
+# initial_states_options = dataset.initial_gate.values
+# expectation_options = dataset.expectation.values
 
-# Define the interactive function
-def update_plot(initial_state, expectation_operator):
-    # Get the corresponding outcome values
-    title = f"{initial_state} - {expectation_operator}"
-    ax.clear()
+# # Define the interactive function
+# def update_plot(initial_state, expectation_operator):
+#     # Get the corresponding outcome values
+#     title = f"{initial_state} - {expectation_operator}"
+#     ax.clear()
 
 
-    y = (
-        dataset.sel(initial_gate = initial_state, expectation=expectation_operator).expectation_values.values
-    )
+#     y = (
+#         dataset.sel(initial_gate = initial_state, expectation=expectation_operator).expectation_values.values
+#     )
 
-    ax.scatter(x, y, c = f"C0", label = "Expectation Value")
+#     ax.scatter(x, y, c = f"C0", label = "Expectation Value")
 
-    ax.set(
-        xlabel="Time [ns]",
-        ylabel="Expectation Value",
-    )
-    ax.legend()
-    ax.set_title(title)
+#     ax.set(
+#         xlabel="Time [ns]",
+#         ylabel="Expectation Value",
+#     )
+#     ax.legend()
+#     ax.set_title(title)
 
-# Create the dropdown widgets
-initial_state_dropdown = Dropdown(options=initial_states_options, description="Initial State:")
-expectation_operator_dropdown = Dropdown(options=expectation_options, description="Expectation Value:")
+# # Create the dropdown widgets
+# initial_state_dropdown = Dropdown(options=initial_states_options, description="Initial State:")
+# expectation_operator_dropdown = Dropdown(options=expectation_options, description="Expectation Value:")
 
-# Define the callback function for the dropdowns
-def dropdown_callback(change):
-    initial_state = initial_state_dropdown.value
-    expectation_operator = expectation_operator_dropdown.value
-    update_plot(initial_state, expectation_operator)
+# # Define the callback function for the dropdowns
+# def dropdown_callback(change):
+#     initial_state = initial_state_dropdown.value
+#     expectation_operator = expectation_operator_dropdown.value
+#     update_plot(initial_state, expectation_operator)
 
-# Register the callback function to the dropdowns
-initial_state_dropdown.observe(dropdown_callback, names="value")
-expectation_operator_dropdown.observe(dropdown_callback, names="value")
+# # Register the callback function to the dropdowns
+# initial_state_dropdown.observe(dropdown_callback, names="value")
+# expectation_operator_dropdown.observe(dropdown_callback, names="value")
 
-# Display the dropdowns
-display(initial_state_dropdown)
-display(expectation_operator_dropdown)
+# # Display the dropdowns
+# display(initial_state_dropdown)
+# display(expectation_operator_dropdown)
 
-# Initialize the plot
-initial_state = initial_state_dropdown.value
-expectation_operator = expectation_operator_dropdown.value
-update_plot(initial_state, expectation_operator)
+# # Initialize the plot
+# initial_state = initial_state_dropdown.value
+# expectation_operator = expectation_operator_dropdown.value
+# update_plot(initial_state, expectation_operator)
 
-# Add legend and labels to the plot
-ax.legend()
-ax.set_xlabel("Time")
-ax.set_ylabel("Probability")
-ax.set_title("Measurement Probabilities")
+# # Add legend and labels to the plot
+# ax.legend()
+# ax.set_xlabel("Time")
+# ax.set_ylabel("Probability")
+# ax.set_title("Measurement Probabilities")

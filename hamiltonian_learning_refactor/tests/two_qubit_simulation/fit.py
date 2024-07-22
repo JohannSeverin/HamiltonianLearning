@@ -33,8 +33,8 @@ CLIP = 3e-2 # Clip harder if no dissipation or SPAM
 
 # Solver parameters
 INITIAL_STEPSIZE = 1.0
-MAX_STEPS = 10000
-ODE_SOLVER = "Dopri5"
+MAX_STEPS = 100000
+ODE_SOLVER = "Dopri8"
 STEPSIZE_CONTROLLER = "adaptive"
 ADJOINT = False
 TOLERANCE = 1e-6
@@ -104,6 +104,15 @@ hamiltonian_params = dynamics.hamiltonian_params
 lindbladian_params = dynamics.lindbladian_params
 state_preparation_params = - 3e-3 * jnp.ones_like(state_preparation.state_preparation_params)
 
+# hamiltonian_params
+
+# hamiltonian_params[1] = hamiltonian_params[1].at[0, -1].set(- 2 * jnp.pi * 450e-6/2)
+# hamiltonian_params[1] = hamiltonian_params[1].at[1, -1].set(2 * jnp.pi * 150e-6/2)
+# # dynamics.set_hamiltonian_params({1: dict(z)})
+# dynamics.set_hamiltonian_params({2: dict(xx = 2 * jnp.pi * 140e-6, zz = 2 * jnp.pi *  100e-6)})
+# lindbladian_params[1] = lindbladian_params[1].at[0, -1, -1].set(0.5 * 3.3333e-5 ** 0.5)
+# lindbladian_params[1] = lindbladian_params[1].at[1, -1, -1].set(0.5 * 3.3333e-5 ** 0.5)
+# lindbladian_params
 
 
 # Get the generators to convert the parameters to states or operators
@@ -144,6 +153,10 @@ loss_and_grad = jax.value_and_grad(loss_fn, argnums=(0))
 # Fit the model
 
 from optax import adam, apply_updates
+from optax import lbfgs, value_and_grad_from_state
+from optax import adaptive_grad_clip
+
+loss_and_grad_from_state = value_and_grad_from_state(loss_fn)
 
 # Test of linesearch
 # from optax import sgd, scale_by_backtracking_linesearch, chain
@@ -153,7 +166,9 @@ from optax import adam, apply_updates
 
 # Init
 params = (state_preparation_params, hamiltonian_params, lindbladian_params)
-opt = adam(LEARNING_RATE)
+opt = lbfgs(LEARNING_RATE)
+clipper = adaptive_grad_clip(10)
+clip_state = clipper.init(params)
 state = opt.init(params)
 
 # Update

@@ -75,7 +75,7 @@ attributes = {
     "QUBIT_T2": QUBIT_T2,
     "TEMPERATURE": TEMPERATURE,
     "P0_GIVEN_0": P0_GIVEN_0,
-    "P1_GIVEN_1": P1_GIVEN_1,
+    # "P1_GIVEN_1": P1_GIVEN_1,
 }
 
 

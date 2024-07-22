@@ -4,9 +4,9 @@
         ".zgroup": {
             "zarr_format": 2
         },
-        "exp0/.zarray": {
+        "basis0/.zarray": {
             "chunks": [
-                4
+                6
             ],
             "compressor": {
                 "blocksize": 0,
@@ -15,23 +15,23 @@
                 "id": "blosc",
                 "shuffle": 1
             },
-            "dtype": "<U1",
+            "dtype": "<U2",
             "fill_value": null,
             "filters": null,
             "order": "C",
             "shape": [
-                4
+                6
             ],
             "zarr_format": 2
         },
-        "exp0/.zattrs": {
+        "basis0/.zattrs": {
             "_ARRAY_DIMENSIONS": [
-                "exp0"
+                "basis0"
             ]
         },
-        "exp1/.zarray": {
+        "basis1/.zarray": {
             "chunks": [
-                4
+                6
             ],
             "compressor": {
                 "blocksize": 0,
@@ -40,27 +40,29 @@
                 "id": "blosc",
                 "shuffle": 1
             },
-            "dtype": "<U1",
+            "dtype": "<U2",
             "fill_value": null,
             "filters": null,
             "order": "C",
             "shape": [
-                4
+                6
             ],
             "zarr_format": 2
         },
-        "exp1/.zattrs": {
+        "basis1/.zattrs": {
             "_ARRAY_DIMENSIONS": [
-                "exp1"
+                "basis1"
             ]
         },
         "expectation_values/.zarray": {
             "chunks": [
-                8,
-                6,
-                6,
                 4,
-                4
+                6,
+                6,
+                6,
+                6,
+                2,
+                2
             ],
             "compressor": {
                 "blocksize": 0,
@@ -77,8 +79,10 @@
                 8,
                 6,
                 6,
-                4,
-                4
+                6,
+                6,
+                2,
+                2
             ],
             "zarr_format": 2
         },
@@ -87,8 +91,10 @@
                 "time",
                 "init0",
                 "init1",
-                "exp0",
-                "exp1"
+                "basis0",
+                "basis1",
+                "measurement_qubit0",
+                "measurement_qubit1"
             ]
         },
         "init0/.zarray": {
@@ -139,6 +145,56 @@
         "init1/.zattrs": {
             "_ARRAY_DIMENSIONS": [
                 "init1"
+            ]
+        },
+        "measurement_qubit0/.zarray": {
+            "chunks": [
+                2
+            ],
+            "compressor": {
+                "blocksize": 0,
+                "clevel": 5,
+                "cname": "lz4",
+                "id": "blosc",
+                "shuffle": 1
+            },
+            "dtype": "<i8",
+            "fill_value": null,
+            "filters": null,
+            "order": "C",
+            "shape": [
+                2
+            ],
+            "zarr_format": 2
+        },
+        "measurement_qubit0/.zattrs": {
+            "_ARRAY_DIMENSIONS": [
+                "measurement_qubit0"
+            ]
+        },
+        "measurement_qubit1/.zarray": {
+            "chunks": [
+                2
+            ],
+            "compressor": {
+                "blocksize": 0,
+                "clevel": 5,
+                "cname": "lz4",
+                "id": "blosc",
+                "shuffle": 1
+            },
+            "dtype": "<i8",
+            "fill_value": null,
+            "filters": null,
+            "order": "C",
+            "shape": [
+                2
+            ],
+            "zarr_format": 2
+        },
+        "measurement_qubit1/.zattrs": {
+            "_ARRAY_DIMENSIONS": [
+                "measurement_qubit1"
             ]
         },
         "time/.zarray": {
