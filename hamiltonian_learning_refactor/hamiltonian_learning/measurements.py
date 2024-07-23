@@ -264,7 +264,7 @@ class Measurements:
             None,
             basis_transformations,
         )
-        probs = jnp.squeeze(jnp.moveaxis(probs, 0, -2))
+        probs = jnp.squeeze(jnp.moveaxis(probs, 0, -3))
         probs = probs.reshape(*probs.shape[:-3], -1, probs.shape[-1])
 
         return probs
