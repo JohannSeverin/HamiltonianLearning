@@ -6,9 +6,12 @@ import xarray as xr
 
 from functools import partial
 
-# os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
-# jax.config.update("jax_platform_name", 'cpu')
+jax.config.update("jax_platform_name", 'gpu')
 
+# Test line for 2 qubit data 
+# dataset = xr.load_dataset("/home/archi1/projects/HamiltonianLearning/hamiltonian_learning_refactor/tests/two_qubit_simulation/dataset.zarr", engine="zarr")
+
+# This runs 5 qubit data
 dataset = xr.load_dataset("dataset.zarr", engine="zarr")
 
 data = dataset.sampled_outcome
@@ -25,11 +28,11 @@ SAMPLES = int(dataset.attrs["SAMPLES"])
 
 # Model parameters
 PERFECT_PREPARATION = True
-# MEASUREMENT_LOCALITY = 1
+PERFECT_MEASUREMENTS = True
 HAMILTONIAN_LOCALITY = 2
 LINDLAD_LOCALITY = 1
 
-CLIP = 1e-3 # Clip harder if no dissipation or SPAM
+CLIP = 1e-2 # Clip harder if no dissipation or SPAM
 
 # Solver parameters
 INITIAL_STEPSIZE = 1.0
@@ -40,18 +43,22 @@ ADJOINT = True
 TOLERANCE = 1e-6
 
 # Optimizer Params
-LOSS = "squared_difference" # "squared_diffrence" OR "likelihood"
+LOSS = "squared_difference" # "squared_difference" OR "multinomial"
 USE_WEIGHTS = False # If squared differences this determines if we should weigh the points according to the estimated std
 
-
+# Optimizer Parameters
 LEARNING_RATE = 1e-4
-ITERATIONS = 100
-HAMILTONIAN_GUESS_ORDER = 1e-3
+ITERATIONS = 5
+
+# Initial guesses will be taken from normal distributions with widths 
+HAMILTONIAN_GUESS_ORDER = 1e-4
 LINDLADIAN_GUESS_ORDER = 1e-5
 
 # Memory to computational time trade-offs
-BATCH_SIZE_INIT_STATES = 32 # Number of initial states to use in the batch
-SCAN_TIMES = True # If true timesteps are looped to save memory
+# Prioritize Measurement Basis and Time Scans over initial size since they do not require re-evolving the states
+BATCH_SIZE_INIT_STATES = 4 ** 4 # Number of initial states to use in the batch
+BATCH_SIZE_MEASUREMENT_BASIS = 3 ** 3 # Number of measurement basis to use in the batch
+SCAN_TIMES = False # If true timesteps are looped to save memory
 
 
 # Import the necessary modules
@@ -82,10 +89,11 @@ state_preparation = StatePreparation(
 measurements = Measurements(
     NQUBITS,
     basis=MEASUREMENT_BASIS,
-    perfect_measurement=True,
+    perfect_measurement=PERFECT_MEASUREMENTS,
     clip=CLIP,
     samples=SAMPLES,
     loss=LOSS,
+    batch_size=BATCH_SIZE_MEASUREMENT_BASIS,
 )
 
 # Define the solver for time dynamics
@@ -103,7 +111,7 @@ solver = Solver(
 # Get the initial parameters to define solve the problem
 hamiltonian_params = dynamics.hamiltonian_params
 lindbladian_params = dynamics.lindbladian_params
-state_preparation_params = - 3e-3 * jnp.ones_like(state_preparation.state_preparation_params)
+state_preparation_params = - jnp.ones_like(state_preparation.state_preparation_params)
 
 
 # Get the generators to convert the parameters to states or operators
@@ -113,7 +121,7 @@ generate_lindbladian = dynamics.get_jump_operator_generator()
 calculate_log_likelihood = measurements.get_loss_fn()
 evolve_states = solver.create_solver()
 
-# Define Helper Functions 
+# Define Helper Functions t
 def body_func(current_sum, states):
     evolved_states, data = states
     log_probability = calculate_log_likelihood(evolved_states, data)
@@ -207,29 +215,35 @@ for i in range(ITERATIONS):
     batch_key, key = jax.random.split(key) 
     index_list = jax.random.permutation(batch_key, len(dataset.initial_gate))
 
-    for j in tqdm(range(0, len(dataset.initial_gate), BATCH_SIZE_INIT_STATES)):
+    pbar = tqdm(range(0, len(dataset.initial_gate), BATCH_SIZE_INIT_STATES), desc = f"Iteration {i}")
+    losses = []
+    for j in pbar:
         batch_indices = index_list[j:j+BATCH_SIZE_INIT_STATES]
         params, state, loss = update_func(params, state, batch_indices)
-        print(f"Iteration {i:03d}  - Loss: {loss:.3e}")
+        losses.append(loss)
+        pbar.set_postfix({"Loss": sum(losses) / len(losses)})
 
 
-
+# remove jitted function to conserve memory
+loss_fn_batched.clear_cache()
+import gc
+gc.collect()
 
 # Test the functions
 state_preparation_params, hamiltonian_params, lindbladian_params = params
-states = generate_initial_states(3e3 * state_preparation_params)#.reshape(-1, 4, 4)
+states = generate_initial_states(state_preparation_params)#.reshape(-1, 4, 4)
 hamiltonian = generate_hamiltonian(hamiltonian_params)
 lindblad_operators = generate_lindbladian(lindbladian_params)
 evolved_states = evolve_states(states, hamiltonian, lindblad_operators)
 
-measurements.generate_samples(evolved_states, SAMPLES)
+# measurements.generate_samples(evolved_states, SAMPLES)
 
 probs = measurements.calculate_measurement_probabilities(evolved_states)
 
 simulated = dataset.measurement_probabilities.copy()
 simulated.values = probs
 
-print("final loss: " + str(loss_fn(params))) # , data
+# print("final loss: " + str(loss_fn(params))) # , data
 
 ##########################
 # Plot the results       #
