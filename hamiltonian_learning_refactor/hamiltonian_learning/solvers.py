@@ -128,7 +128,9 @@ class Solver:
             if adjoint
             else diffrax.RecursiveCheckpointAdjoint()
         )
-        self.saveat = diffrax.SaveAt(ts=times) if times is not None else None
+        self.saveat = (
+            diffrax.SaveAt(ts=times) if times is not None else diffrax.SaveAt(t1=True)
+        )
 
     def create_solver(self):
         """

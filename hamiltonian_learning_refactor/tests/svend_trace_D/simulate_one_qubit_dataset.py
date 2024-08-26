@@ -19,21 +19,21 @@ NAME = "OneQubitDataset"
 NQUBITS = 1
 
 # Simulation parameters
-DURATION = 56e-9
-NPOINTS = 8 
+DURATION = 100e-6
+NPOINTS = 100
 SAMPLES = 1000 # Not used can be introduced later
 
 TIME_UNIT = 1e-9
 
 # Define single qubit parameters
 QUBIT_FREQUENCY = [5.2e9]  # Hz
-QUBIT_FREQUENCY_OFFSET = [-450e3]  # Hz
+QUBIT_FREQUENCY_OFFSET = [0] # -4e5]  # Hz
 QUBIT_ANHARMONICITY = [-300e6]  # Hz
 
 
 # Decoherence channels. There will be no two-local decoherences in this simulation
-QUBIT_T1 = [30e-6]  # s
-QUBIT_T2 = [30e-6]  # s
+QUBIT_T1 = [10e-6]  # s
+QUBIT_T2 = [20e-6]  # s
 
 
 # Define the initial state on the basis of temperature
@@ -46,11 +46,11 @@ P1_GIVEN_1 = [1]  # [0.97, 0.94]
 # Initial Gates
 INITIAL_GATES = {
     "z": qutip.qeye(2),  # Starts in z
-    "x": qutip.gates.ry(np.pi / 2),  # Starts in x
-    "y": qutip.gates.rx(-np.pi / 2),  # Starts in y
+    "x": qutip.qip.ry(np.pi / 2),  # Starts in x
+    "y": qutip.qip.rx(-np.pi / 2),  # Starts in y
     "-z": qutip.sigmax(),  # Start in -z
-    "-x": qutip.gates.ry(-np.pi / 2),  # Start in -x
-    "-y": qutip.gates.rx(np.pi / 2),  # Start in -y
+    "-x": qutip.qip.ry(-np.pi / 2),  # Start in -x
+    "-y": qutip.qip.rx(np.pi / 2),  # Start in -y
 }
 
 # Transformations to measurement basis
@@ -184,7 +184,7 @@ expectation_values = np.zeros(shape)
 
 for init_index, key_init in tqdm(enumerate(initial_gates)):
     initial_state_i = (
-        initial_gates[key_init] @ initial_state @ initial_gates[key_init].dag()
+        initial_gates[key_init] * initial_state * initial_gates[key_init].dag()
     )
 
     result = mesolve(
@@ -255,7 +255,7 @@ def update_plot(initial_state, expectation_operator):
         dataset.sel(initial_gate = initial_state, expectation=expectation_operator).expectation_values.values
     )
 
-    ax.scatter(x, y, c = f"C{i}", label = "Expectation Value")
+    ax.scatter(x, y, c = None, label = "Expectation Value")
 
     ax.set(
         xlabel="Time [ns]",

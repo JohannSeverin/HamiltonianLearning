@@ -235,12 +235,12 @@ class Parameterization:
         self,
         n_qubits: int,
         qubit_levels: int = 2,
-        hamiltonian_locality: int = None,
-        lindblad_locality: int = None,
-        hamiltonian_graph: dict = None,
-        lindblad_graph: dict = None,
-        hamiltonian_amplitudes: list[float] = None,
-        lindblad_amplitudes: list[float] = None,
+        hamiltonian_locality: int = 0,
+        lindblad_locality: int = 0,
+        hamiltonian_graph: dict = {},
+        lindblad_graph: dict = {},
+        hamiltonian_amplitudes: list[float] = [],
+        lindblad_amplitudes: list[float] = [],
     ):
         assert hamiltonian_locality is not None or hamiltonian_graph is not None
         assert lindblad_locality is not None or lindblad_graph is not None
@@ -260,13 +260,13 @@ class Parameterization:
         self.lindblad_graph = lindblad_graph
 
         # Generate graphs if not given
-        if hamiltonian_graph is None:
+        if hamiltonian_graph is []:
             self.hamiltonian_graph = {
                 i: tuple(itertools.combinations(range(n_qubits), r=i))
                 for i in range(1, self.hamiltonian_locality + 1)
             }
 
-        if lindblad_graph is None:
+        if lindblad_graph is []:
             self.lindblad_graph = {
                 i: tuple(itertools.combinations(range(n_qubits), r=i))
                 for i in range(1, self.lindblad_locality + 1)
