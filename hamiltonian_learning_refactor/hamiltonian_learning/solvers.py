@@ -11,7 +11,7 @@ import diffrax
 
 from jax import jit
 import jax
-import jaxtyping 
+import jaxtyping
 
 jax.config.update("jax_enable_x64", True)
 
@@ -80,16 +80,7 @@ def _lindblad_master_equation(rho, hamiltonian, jump_operators):
 
 # How does this look for time dependence. Maybe write firset adn then split in proper sections
 
-
-
-def _time_dependent_master_equation(rho, t, [hamiltonian_parms, lindbladian_params]):
-
-    hamiltonian = hamiltonian_generator_function(t)
-    jump_operators = Not supported 
-
-    return _lindblad_master_equation(rho, hamiltonian=hamiltonian, jump_operators=jump_operators)
-
-
+from diffrax import backward_hermite_coefficients, CubicInterpolation
 
 
 class Solver:
@@ -191,16 +182,57 @@ class Solver:
 
         return evolve_states
 
-    def create_time_dependent_solver(self):
 
-        def evolve_states(initial_state, hamiltonian_function, jump_operators_function):
-            
-            def dynamics(t:float, rho:jaxtyping.PyTree) -> jaxtyping.PyTree:
-                hamiltonian = hamiltonian_function(t)
-                jump_operators = jump_operators_function(t)
+class TimeDependentSolver(Solver):
 
+    def __init__(
+        self,
+        times: jnp.ndarray,
+        # initial_states: jnp.ndarray,
+        initial_stepsize: float = 1.0,
+        max_steps: int = 10000,
+        ode_solver: Literal["Dopri5", "Dopri8"] = "Dopri5",
+        stepsize_controller: Literal["basic", "adaptive"] = "basic",
+        adjoint: bool = False,
+        tolerance: float = 1e-6,  # Used for adaptive stepsize controller
+    ):
+        # Time and State setup
+        self.times = times
+        self.start_time = times[0]
+        self.end_time = times[-1]
+
+        # self.initial_states = initial_states
+
+        # Solver Setup
+        self.initial_stepsize = initial_stepsize
+        self.max_steps = max_steps
+        self.ode_solver = getattr(diffrax, ode_solver)()
+        self.stepsize_controller = (
+            diffrax.PIDController(atol=tolerance, rtol=tolerance)
+            if stepsize_controller == "adaptive"
+            else diffrax.ConstantStepSize()
+        )
+        self.adjoint = (
+            diffrax.BacksolveAdjoint(solver=self.ode_solver)
+            if adjoint
+            else diffrax.RecursiveCheckpointAdjoint()
+        )
+        self.saveat = (
+            diffrax.SaveAt(ts=times) if times is not None else diffrax.SaveAt(t1=True)
+        )
+
+    def create_solver(self, ts):
+        # Use interpolation to create the solver
+
+        def evolve_states(initial_state, ts, Hs, jump_operators):
+            coffs = backward_hermite_coefficients(ts, Hs)
+            cubic_interp = CubicInterpolation(ts, coffs)
+
+            def dynamics(t: float, rho: jaxtyping.PyTree) -> jaxtyping.PyTree:
+                hamiltonian = cubic_interp.evaluate(t)
+                
                 drho = _lindblad_master_equation(rho, hamiltonian, jump_operators)
-            
+
             term = diffrax.ODETerm(dynamics)
 
             return diffrax.diffeqsolve(
@@ -215,9 +247,6 @@ class Solver:
                 max_steps=self.max_steps,
                 saveat=self.saveat,
             ).ys
-
-
-
 
 
 # Tests

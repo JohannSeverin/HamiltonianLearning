@@ -7,6 +7,7 @@ from functools import partial
 
 from jax import jit
 import jax
+import jaxtyping
 
 jax.config.update("jax_enable_x64", True)
 
@@ -49,6 +50,19 @@ def _convert_pauli_to_hamiltonians(tensors, connections, n_qubits, locality):
     return jnp.einsum("cp, pij -> cij", tensors, pauli_matrices)
 
 
+@partial(jit, static_argnums=(1, 2, 3, 4))
+def _convert_pauli_to_hamiltonians_with_time(
+    tensors, connections, n_qubits, locality, timesteps
+):
+
+    number_of_connections = len(connections)
+    pauli_matrices = _pauli_product(locality)
+
+    tensors = tensors.reshape((timesteps, number_of_connections, 3**locality))
+
+    return jnp.einsum("tcp, pij -> tcij", tensors, pauli_matrices)
+
+
 @partial(jit, static_argnums=(1, 2, 3))
 def _sum_interaction_hamiltonian(tensors, connections, n_qubits, locality):
     shape = (2,) * (2 * n_qubits)
@@ -79,6 +93,47 @@ def _sum_interaction_hamiltonian(tensors, connections, n_qubits, locality):
         for j in range(n_qubits - locality):
             H = _add_matrix_to_tensor(H, jnp.eye(2))
 
+        H = H.transpose(order)
+
+        output += H
+
+    return output
+
+
+@partial(jit, static_argnums=(1, 2, 3, 4))
+def _sum_interaction_hamiltonian_with_time(
+    tensors, connections, n_qubits, locality, timesteps
+):
+    shape = (timesteps,) + (2,) * (2 * n_qubits)
+    output = jnp.zeros(shape, dtype=jnp.complex128)
+
+    # Loop over connection elements
+    for i in range(len(connections)):
+
+        # Need to calculate the index order for permuting the tensor so the desired qubits interact
+        order = [-1] * n_qubits
+        connection = connections[i]
+
+        for j, conn in enumerate(connection):
+            order[conn] = j
+
+        fill_with = list(range(locality, n_qubits))
+
+        for j, o in enumerate(order):
+            if o == -1:
+                order[j] = fill_with.pop(0)
+
+        order = order + [n_qubits + i for i in order]
+        order = [0] + [i + 1 for i in order]
+
+        # Create the Hamiltonian contribution
+        H = tensors[:, i].reshape((timesteps,) + (2,) * locality * 2)
+
+        # Fill with identity to have proper hilbert space
+        for j in range(n_qubits - locality):
+            H = jax.vmap(_add_matrix_to_tensor, in_axes=(0, None))(H, jnp.eye(2))
+
+        print(order, H.shape)
         H = H.transpose(order)
 
         output += H
@@ -260,13 +315,13 @@ class Parameterization:
         self.lindblad_graph = lindblad_graph
 
         # Generate graphs if not given
-        if hamiltonian_graph is []:
+        if len(hamiltonian_graph) == 0:
             self.hamiltonian_graph = {
                 i: tuple(itertools.combinations(range(n_qubits), r=i))
                 for i in range(1, self.hamiltonian_locality + 1)
             }
 
-        if lindblad_graph is []:
+        if len(lindblad_graph) == 0:
             self.lindblad_graph = {
                 i: tuple(itertools.combinations(range(n_qubits), r=i))
                 for i in range(1, self.lindblad_locality + 1)
@@ -478,82 +533,13 @@ class Parameterization:
 
 
 # Time dependent Hamiltonian
-
-
-def interpolate_params(params, time):
-    pass
-
-
-class TimeDependentPart:
-
-    def __init__(
-        self,
-        locality,
-        n_qubits,
-        t0,
-        t1,
-        stepsize,
-    ):
-        self.locality = locality
-        self.n_qubits = n_qubits
-        self.t0 = t0
-        self.t1 = t1
-        self.stepsize = stepsize
-
-        self.times = jnp.arange(t0, t1 + stepsize, stepsize)
-        self.number_of_interpolation_points = len(self.times)
-
-    def get_time_dependent_generator(self):
-
-        def time_dependent_generator(ts, Hs):
-            # Where params is the hamiltonian as function of time and then we will interpolate between them
-
-            hamiltonians = jnp.zeros(
-                (
-                    self.number_of_interpolation_points,
-                    self.hilbert_size,
-                    self.hilbert_size,
-                )
-            )
-
-            for i in range(self.number_of_interpolation_points):
-                hamiltonian_at_t = jnp.zeros((self.hilbert_size, self.hilbert_size))
-
-                for locality in range(1, self.hamiltonian_locality + 1):
-                    hamiltonians = _convert_pauli_to_hamiltonians(
-                        hamiltonian_params[locality],
-                        self.hamiltonian_graph[locality],
-                        self.n_qubits,
-                        locality,
-                    )
-                    hamiltonian_at_t += _sum_interaction_hamiltonian(
-                        hamiltonians,
-                        self.hamiltonian_graph[locality],
-                        self.n_qubits,
-                        locality,
-                    ).reshape((self.hilbert_size, self.hilbert_size))
-
-                hamiltonians = hamiltonians.at[i].set(hamiltonian_at_t)
-
-            from diffrax import CubicInterpolation, backward_hermite_coefficients
-
-            coefficients = backward_hermite_coefficients(ts, Hs)
-            interpolator = CubicInterpolation(ts, coefficients)
-
-            def H_of_t(t):
-                return interpolator.evaluate(t)
-
-            return H_of_t
-
-        return time_dependent_generator
-
-
-class TimeDependentParamerization(Parameterization):
+class InterpolatedParameterization(Parameterization):
 
     def __init__(
         self,
         n_qubits: int,
         qubit_levels: int = 2,
+        times: jaxtyping.Array = jnp.array([0.0, 1.0]),
         time_dependent_hamiltonian_locality: int = 0,
         hamiltonian_locality: int = 0,
         lindblad_locality: int = 0,
@@ -562,6 +548,7 @@ class TimeDependentParamerization(Parameterization):
         hamiltonian_amplitudes: list[float] = [],
         lindblad_amplitudes: list[float] = [],
     ):
+        self.number_of_interpolation_points = len(times)
 
         super().__init__(
             n_qubits=n_qubits,
@@ -574,21 +561,120 @@ class TimeDependentParamerization(Parameterization):
             lindblad_amplitudes=lindblad_amplitudes,
         )
 
+    def _generate_hamiltonian_params(self, amplitude=None, seed=0):
+        """
+        Generates the Hamiltonian parameters based on the Hamiltonian graph.
+
+        Returns:
+            dict: A dictionary containing the Hamiltonian parameters for each locality.
+        """
+        hamiltonian_params = {
+            1: jnp.zeros(
+                (self.number_of_interpolation_points, self.n_qubits, self.generators),
+                dtype=jnp.complex128,
+            )
+        }
+
+        hamiltonian_connections = {
+            locality: len(graph) for locality, graph in self.hamiltonian_graph.items()
+        }
+        hamiltonian_params_shape = {
+            locality: [self.number_of_interpolation_points]
+            + [hamiltonian_connections[locality]]
+            + [self.generators] * locality
+            for locality in hamiltonian_connections
+        }
+        hamiltonian_params.update(
+            {
+                locality: jnp.zeros(
+                    hamiltonian_params_shape[locality], dtype=jnp.complex128
+                )
+                for locality in hamiltonian_connections
+            }
+        )
+
+        if amplitude:
+            key = jax.random.PRNGKey(seed)
+            keys = jax.random.split(key, self.hamiltonian_locality)
+
+            for locality in hamiltonian_params:
+                hamiltonian_params[locality] = amplitude * jax.random.normal(
+                    keys[locality], hamiltonian_params[locality].shape
+                )
+
+        return hamiltonian_params
+
+    def set_hamiltonian_params(self, hamiltonian_params: dict):
+        print("Setting Hamiltonian Parameters is not optimzied to time yet")
+        return super().set_hamiltonian_params(hamiltonian_params)
+
+    def get_hamiltonian_generator(self):
+        """
+        Creates a jitted function that converts the Hamiltonian parameters to a Hamiltonian matrix.
+        """
+
+        @partial(jit)
+        def hamiltonian_generator(hamiltonian_params: dict):
+            """
+            Creates the Hamiltonian based on the Hamiltonian parameters.
+            """
+            hamiltonian = jnp.zeros(
+                (
+                    self.number_of_interpolation_points,
+                    self.hilbert_size,
+                    self.hilbert_size,
+                )
+            )
+
+            for locality in range(1, self.hamiltonian_locality + 1):
+                hamiltonians = _convert_pauli_to_hamiltonians_with_time(
+                    hamiltonian_params[locality],
+                    self.hamiltonian_graph[locality],
+                    self.n_qubits,
+                    locality,
+                    self.number_of_interpolation_points,
+                )
+                hamiltonian += _sum_interaction_hamiltonian_with_time(
+                    hamiltonians,
+                    self.hamiltonian_graph[locality],
+                    self.n_qubits,
+                    locality,
+                    self.number_of_interpolation_points,
+                ).reshape(
+                    (
+                        self.number_of_interpolation_points,
+                        self.hilbert_size,
+                        self.hilbert_size,
+                    )
+                )
+
+            return hamiltonian
+
+        return hamiltonian_generator
+
 
 if __name__ == "__main__":
     NQUBITS = 2
     H_LOCALITY = 2
     L_LOCALITY = 0
 
-    parameters = Parameterization(
-        NQUBITS, hamiltonian_locality=H_LOCALITY, lindblad_locality=L_LOCALITY
+    parameters = InterpolatedParameterization(
+        NQUBITS,
+        hamiltonian_locality=H_LOCALITY,
+        lindblad_locality=L_LOCALITY,
+        times=jnp.arange(0, 40, 4),
+        hamiltonian_amplitudes=1.0,
     )
 
+    params = parameters.hamiltonian_params
     hamiltonian_generator = parameters.get_hamiltonian_generator()
-    jump_operator_generator = parameters.get_jump_operator_generator()
 
-    hamiltonian_generator(parameters.hamiltonian_params)
-    jump_operator_generator(parameters.lindbladian_params)
+    hamiltonian_generator(params)[0].imag
+
+    # jump_operator_generator = parameters.get_jump_operator_generator()
+
+    # hamiltonian_generator(parameters.hamiltonian_params)
+    # jump_operator_generator(parameters.lindbladian_params)
 
     # %timeit hamiltonian = hamiltonian_generator(parameters.hamiltonian_params)
     # %timeit jump_operators = jump_operator_generator(parameters.lindbladian_params)
