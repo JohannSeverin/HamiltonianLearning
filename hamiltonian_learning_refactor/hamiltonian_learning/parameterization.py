@@ -477,9 +477,107 @@ class Parameterization:
         return lindbladian_generator
 
 
+# Time dependent Hamiltonian
+
+
+def interpolate_params(params, time):
+    pass
+
+
+class TimeDependentPart:
+
+    def __init__(
+        self,
+        locality,
+        n_qubits,
+        t0,
+        t1,
+        stepsize,
+    ):
+        self.locality = locality
+        self.n_qubits = n_qubits
+        self.t0 = t0
+        self.t1 = t1
+        self.stepsize = stepsize
+
+        self.times = jnp.arange(t0, t1 + stepsize, stepsize)
+        self.number_of_interpolation_points = len(self.times)
+
+    def get_time_dependent_generator(self):
+
+        def time_dependent_generator(ts, Hs):
+            # Where params is the hamiltonian as function of time and then we will interpolate between them
+
+            hamiltonians = jnp.zeros(
+                (
+                    self.number_of_interpolation_points,
+                    self.hilbert_size,
+                    self.hilbert_size,
+                )
+            )
+
+            for i in range(self.number_of_interpolation_points):
+                hamiltonian_at_t = jnp.zeros((self.hilbert_size, self.hilbert_size))
+
+                for locality in range(1, self.hamiltonian_locality + 1):
+                    hamiltonians = _convert_pauli_to_hamiltonians(
+                        hamiltonian_params[locality],
+                        self.hamiltonian_graph[locality],
+                        self.n_qubits,
+                        locality,
+                    )
+                    hamiltonian_at_t += _sum_interaction_hamiltonian(
+                        hamiltonians,
+                        self.hamiltonian_graph[locality],
+                        self.n_qubits,
+                        locality,
+                    ).reshape((self.hilbert_size, self.hilbert_size))
+
+                hamiltonians = hamiltonians.at[i].set(hamiltonian_at_t)
+
+            from diffrax import CubicInterpolation, backward_hermite_coefficients
+
+            coefficients = backward_hermite_coefficients(ts, Hs)
+            interpolator = CubicInterpolation(ts, coefficients)
+
+            def H_of_t(t):
+                return interpolator.evaluate(t)
+
+            return H_of_t
+
+        return time_dependent_generator
+
+
+class TimeDependentParamerization(Parameterization):
+
+    def __init__(
+        self,
+        n_qubits: int,
+        qubit_levels: int = 2,
+        time_dependent_hamiltonian_locality: int = 0,
+        hamiltonian_locality: int = 0,
+        lindblad_locality: int = 0,
+        hamiltonian_graph: dict = {},
+        lindblad_graph: dict = {},
+        hamiltonian_amplitudes: list[float] = [],
+        lindblad_amplitudes: list[float] = [],
+    ):
+
+        super().__init__(
+            n_qubits=n_qubits,
+            qubit_levels=qubit_levels,
+            hamiltonian_locality=hamiltonian_locality,
+            lindblad_locality=lindblad_locality,
+            hamiltonian_graph=hamiltonian_graph,
+            lindblad_graph=lindblad_graph,
+            hamiltonian_amplitudes=hamiltonian_amplitudes,
+            lindblad_amplitudes=lindblad_amplitudes,
+        )
+
+
 if __name__ == "__main__":
-    NQUBITS = 5
-    H_LOCALITY = 5
+    NQUBITS = 2
+    H_LOCALITY = 2
     L_LOCALITY = 0
 
     parameters = Parameterization(

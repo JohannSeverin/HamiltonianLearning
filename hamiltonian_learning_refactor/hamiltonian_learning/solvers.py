@@ -11,6 +11,7 @@ import diffrax
 
 from jax import jit
 import jax
+import jaxtyping 
 
 jax.config.update("jax_enable_x64", True)
 
@@ -75,6 +76,20 @@ def _lindblad_master_equation(rho, hamiltonian, jump_operators):
     drho += _get_dissipation_term(rho, jump_operators)
 
     return drho
+
+
+# How does this look for time dependence. Maybe write firset adn then split in proper sections
+
+
+
+def _time_dependent_master_equation(rho, t, [hamiltonian_parms, lindbladian_params]):
+
+    hamiltonian = hamiltonian_generator_function(t)
+    jump_operators = Not supported 
+
+    return _lindblad_master_equation(rho, hamiltonian=hamiltonian, jump_operators=jump_operators)
+
+
 
 
 class Solver:
@@ -147,6 +162,7 @@ class Solver:
             """
             Differential equation governing the system
             """
+
             drho = _lindblad_master_equation(rho, args[0], args[1])
 
             return drho
@@ -174,6 +190,34 @@ class Solver:
             ).ys
 
         return evolve_states
+
+    def create_time_dependent_solver(self):
+
+        def evolve_states(initial_state, hamiltonian_function, jump_operators_function):
+            
+            def dynamics(t:float, rho:jaxtyping.PyTree) -> jaxtyping.PyTree:
+                hamiltonian = hamiltonian_function(t)
+                jump_operators = jump_operators_function(t)
+
+                drho = _lindblad_master_equation(rho, hamiltonian, jump_operators)
+            
+            term = diffrax.ODETerm(dynamics)
+
+            return diffrax.diffeqsolve(
+                terms=term,
+                solver=self.ode_solver,
+                y0=initial_state,
+                t0=self.start_time,
+                t1=self.end_time,
+                stepsize_controller=self.stepsize_controller,
+                dt0=self.initial_stepsize,
+                adjoint=self.adjoint,
+                max_steps=self.max_steps,
+                saveat=self.saveat,
+            ).ys
+
+
+
 
 
 # Tests
