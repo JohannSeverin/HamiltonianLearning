@@ -161,8 +161,6 @@ class Solver:
         self.dynamics = dynamics
         term = diffrax.ODETerm(dynamics)
 
-        # print(term, self.ode_solver)
-
         # @jit
         def evolve_states(initial_state, hamiltonian, jump_operators):
 
@@ -228,10 +226,12 @@ class TimeDependentSolver(Solver):
             coffs = backward_hermite_coefficients(ts, Hs)
             cubic_interp = CubicInterpolation(ts, coffs)
 
-            def dynamics(t: float, rho: jaxtyping.PyTree) -> jaxtyping.PyTree:
+            def dynamics(t: float, rho: jaxtyping.PyTree, args) -> jaxtyping.PyTree:
                 hamiltonian = cubic_interp.evaluate(t)
-                
+
                 drho = _lindblad_master_equation(rho, hamiltonian, jump_operators)
+
+                return drho
 
             term = diffrax.ODETerm(dynamics)
 
@@ -248,26 +248,88 @@ class TimeDependentSolver(Solver):
                 saveat=self.saveat,
             ).ys
 
+        return evolve_states
+
 
 # Tests
+# if __name__ == "__main__":
+#     import sys, pathlib
+
+#     sys.path.append(str(pathlib.Path(__file__).parent.parent))
+#     from parameterization import Parameterization
+
+#     NQUBITS = 3
+#     H_LOCALITY = 3
+#     L_LOCALITY = 3
+
+#     parameters = Parameterization(
+#         NQUBITS, hamiltonian_locality=H_LOCALITY, lindblad_locality=L_LOCALITY
+#     )
+
+#     initial_states = jnp.stack([jnp.eye(2**NQUBITS, dtype=jnp.complex128)] * 1000)
+
+#     solver = Solver(
+#         times=jnp.linspace(0, 1000, 100),
+#         initial_stepsize=1.0,
+#         max_steps=1000,
+#         ode_solver="Dopri5",
+#         stepsize_controller="adaptive",
+#         adjoint=False,
+#         tolerance=1e-6,
+#     )
+
+#     hamiltonian_generator = parameters.get_hamiltonian_generator()
+#     jump_operator_generator = parameters.get_jump_operator_generator()
+#     evolve_states = solver.create_solver()
+
+#     @jit
+#     def loss_fn(hamiltonian_params, lindbladian_params):
+#         hamiltonian = hamiltonian_generator(hamiltonian_params)
+#         jump_operators = jump_operator_generator(lindbladian_params)
+#         ground_last = evolve_states(initial_states, hamiltonian, jump_operators)[-1]
+#         return ground_last[..., 0, 0].sum().real
+
+#     hamiltonian_params = parameters.hamiltonian_params
+#     lindbladian_params = parameters.lindbladian_params
+
+#     grad_func = jax.grad(loss_fn, argnums=(0, 1))
+
+#     loss_fn(hamiltonian_params, lindbladian_params)
+#     grads = grad_func(hamiltonian_params, lindbladian_params)
+
+
 if __name__ == "__main__":
+    # Test the time dependent solver
     import sys, pathlib
 
     sys.path.append(str(pathlib.Path(__file__).parent.parent))
-    from parameterization import Parameterization
 
-    NQUBITS = 3
-    H_LOCALITY = 3
-    L_LOCALITY = 3
+    NQUBITS = 2
+    H_LOCALITY = 2
+    L_LOCALITY = 1
 
-    parameters = Parameterization(
-        NQUBITS, hamiltonian_locality=H_LOCALITY, lindblad_locality=L_LOCALITY
+    from parameterization import InterpolatedParameterization
+
+    parameters = InterpolatedParameterization(
+        NQUBITS,
+        hamiltonian_locality=H_LOCALITY,
+        lindblad_locality=L_LOCALITY,
+        times=jnp.arange(0, 40, 4),
+        hamiltonian_amplitudes=1.0,
     )
 
-    initial_states = jnp.stack([jnp.eye(2**NQUBITS, dtype=jnp.complex128)] * 1000)
+    params = parameters.hamiltonian_params
+    generator = parameters.get_hamiltonian_generator()
 
-    solver = Solver(
-        times=jnp.linspace(0, 1000, 100),
+    initial_states = jnp.stack(
+        [jnp.zeros((2**NQUBITS, 2**NQUBITS), dtype=jnp.complex128)] * 20
+    )
+    initial_states = initial_states.at[:, 0, 0].set(1.0)
+
+    ts = jnp.arange(0, 40, 4)
+
+    solver = TimeDependentSolver(
+        times=ts,
         initial_stepsize=1.0,
         max_steps=1000,
         ode_solver="Dopri5",
@@ -276,21 +338,16 @@ if __name__ == "__main__":
         tolerance=1e-6,
     )
 
-    hamiltonian_generator = parameters.get_hamiltonian_generator()
-    jump_operator_generator = parameters.get_jump_operator_generator()
-    evolve_states = solver.create_solver()
+    evolve_states = solver.create_solver(ts)
 
-    @jit
-    def loss_fn(hamiltonian_params, lindbladian_params):
-        hamiltonian = hamiltonian_generator(hamiltonian_params)
-        jump_operators = jump_operator_generator(lindbladian_params)
-        ground_last = evolve_states(initial_states, hamiltonian, jump_operators)[-1]
-        return ground_last[..., 0, 0].sum().real
+    hamiltonian = generator(params)
+    jump_operators = parameters.get_jump_operator_generator()(
+        parameters.lindbladian_params
+    )
 
-    hamiltonian_params = parameters.hamiltonian_params
-    lindbladian_params = parameters.lindbladian_params
+    coffs = backward_hermite_coefficients(ts, hamiltonian)
+    cubic_interp = CubicInterpolation(ts, coffs)
 
-    grad_func = jax.grad(loss_fn, argnums=(0, 1))
+    cubic_interp.evaluate(5)
 
-    loss_fn(hamiltonian_params, lindbladian_params)
-    grads = grad_func(hamiltonian_params, lindbladian_params)
+    evolved_states = evolve_states(initial_states, ts, hamiltonian, jump_operators)

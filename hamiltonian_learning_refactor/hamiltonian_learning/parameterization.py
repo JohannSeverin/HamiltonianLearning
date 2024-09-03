@@ -133,7 +133,6 @@ def _sum_interaction_hamiltonian_with_time(
         for j in range(n_qubits - locality):
             H = jax.vmap(_add_matrix_to_tensor, in_axes=(0, None))(H, jnp.eye(2))
 
-        print(order, H.shape)
         H = H.transpose(order)
 
         output += H
