@@ -30,9 +30,6 @@ STEPSIZE_CONTROLLER = "adaptive"
 ADJOINT = False
 TOLERANCE = 1e-6
 
-# INITIAL_GUESSES?
-
-
 # Define the parameterization classes
 
 # Something Like this  should be imported - all which contains classes that generates functions

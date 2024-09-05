@@ -3,28 +3,28 @@ import jax.numpy as jnp
 
 
 # Common operators
-def identity(n=2):
+def identity(n=2) -> jnp.ndarray:
     """
     Return the identity matrix
     """
     return jnp.eye(n, dtype=jnp.complex128)
 
 
-def sigma_x(n=2):
+def sigma_x(n=2) -> jnp.ndarray:
     """
     Return the Pauli X matrix
     """
     return jnp.zeros((n, n), dtype=jnp.complex128).at[0, 1].set(1.0).at[1, 0].set(1.0)
 
 
-def sigma_y(n=2):
+def sigma_y(n=2) -> jnp.ndarray:
     """
     Return the Pauli Y matrix
     """
     return jnp.zeros((n, n), dtype=jnp.complex128).at[0, 1].set(-1j).at[1, 0].set(1j)
 
 
-def sigma_z(n=2):
+def sigma_z(n=2) -> jnp.ndarray:
     """
     Return the Pauli Z matrix
     """

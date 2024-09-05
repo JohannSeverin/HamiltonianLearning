@@ -44,9 +44,9 @@ LOSS = "squared_difference" # "squared_difference" OR "multinomial"
 USE_WEIGHTS = True # If squared differences this determines if we should weigh the points according to the estimated std
 
 LEARNING_RATE = 1e-4
-ITERATIONS = 1000
-HAMILTONIAN_GUESS_ORDER = 1e-4
-LINDLADIAN_GUESS_ORDER = 1e-5
+ITERATIONS = 20
+HAMILTONIAN_GUESS_ORDER = {1: 1e-4}
+LINDLADIAN_GUESS_ORDER ={1: 1e-5}
 
 
 # Define the parameterization classes
@@ -56,6 +56,10 @@ LINDLADIAN_GUESS_ORDER = 1e-5
 sys.path.append(
     "/home/archi1/projects/HamiltonianLearning/hamiltonian_learning_refactor"
 )
+sys.path.append(
+    "/root/projects/HamiltonianLearning/hamiltonian_learning_refactor/"
+)
+
 from hamiltonian_learning import (
     Measurements,
     StatePreparation,
@@ -125,14 +129,11 @@ generate_initial_states = state_preparation.get_initial_state_generator()
 generate_hamiltonian = dynamics.get_hamiltonian_generator()
 generate_lindbladian = dynamics.get_jump_operator_generator()
 calculate_log_likelihood = measurements.get_loss_fn()
-
 evolve_states = solver.create_solver(TIMES)
 
 
 # Define the loss function
-@partial(
-    jax.jit,
-)
+@jax.jit
 def loss_fn(
     params,
 ):
@@ -141,7 +142,7 @@ def loss_fn(
     """
     state_preparation_params, hamiltonian_params, lindbladian_params = params
 
-    initial_states = generate_initial_states(3e3 * state_preparation_params) # .reshape(-1, 4, 4)
+    initial_states = generate_initial_states(3e3 * state_preparation_params)
     hamiltonian = generate_hamiltonian(hamiltonian_params)
     lindblad_operators = generate_lindbladian(lindbladian_params)
 
@@ -163,12 +164,6 @@ from optax import lbfgs, value_and_grad_from_state
 from optax import adaptive_grad_clip
 
 loss_and_grad_from_state = value_and_grad_from_state(loss_fn)
-
-# Test of linesearch
-# from optax import sgd, scale_by_backtracking_linesearch, chain
-
-# opt = chain(sgd(LEARNING_RATE), scale_by_backtracking_linesearch(15, max_learning_rate=1e-3))
-
 
 # Init
 params = (state_preparation_params, hamiltonian_params, lindbladian_params)
@@ -212,11 +207,27 @@ import matplotlib.pyplot as plt
 from ipywidgets import interact, Dropdown
 from IPython.display import display
 
+x = TIMES
+
+
+# Show the hamiltonian parameters as function of time 
+fig, ax = plt.subplots(1, 1, figsize=(8, 5))
+
+for i, key in enumerate("xyz"):
+    y = hamiltonian_params[1][:, 0, i]
+    ax.plot(x, y, label=key, color = "C" + str(i))
+    ax.plot(x, y, "o", label=key, color = "C" + str(i))
+
+ax.set(xlabel="Time", ylabel="Amplitude")
+ax.set_title("Hamiltonian Parameters")
+
+
+ax.legend()
+
 
 # We plot the z1, z2, and z1z2 values of the states
 fig, ax = plt.subplots(1, 1, figsize=(8, 5))
 
-x = TIMES
 
 # Get the initial states and measurement basis options
 initial_states_options = simulated.initial_gate.values
@@ -243,6 +254,7 @@ def update_plot(initial_state, measurement_basis):
     
     ax.legend()
     ax.set_title(title)
+
 
 # Create the dropdown widgets
 initial_state_dropdown = Dropdown(options=initial_states_options, description="Initial State:")
@@ -273,11 +285,3 @@ ax.set_xlabel("Time")
 ax.set_ylabel("Probability")
 ax.set_title("Measurement Probabilities")
 
-# Show the hamiltonian parameters as function of time 
-fig, ax = plt.subplots(1, 1, figsize=(8, 5))
-
-for i, key in enumerate("xyz"):
-    y = hamiltonian_params[1][:, 0, i]
-    ax.plot(x, y, label=key)
-
-ax.legend()

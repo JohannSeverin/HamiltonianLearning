@@ -337,7 +337,7 @@ class Parameterization:
         )
         self.lindbladian_params = self._generate_lindbladian_params(lindblad_amplitudes)
 
-    def _generate_hamiltonian_params(self, amplitude=None, seed=0):
+    def _generate_hamiltonian_params(self, amplitude={}, seed=0):
         """
         Generates the Hamiltonian parameters based on the Hamiltonian graph.
 
@@ -364,12 +364,12 @@ class Parameterization:
             }
         )
 
-        if amplitude:
+        if len(amplitude) > 0:
             key = jax.random.PRNGKey(seed)
             keys = jax.random.split(key, self.hamiltonian_locality)
 
             for locality in hamiltonian_params:
-                hamiltonian_params[locality] = amplitude * jax.random.normal(
+                hamiltonian_params[locality] = amplitude[locality] * jax.random.normal(
                     keys[locality], hamiltonian_params[locality].shape
                 )
 
@@ -411,7 +411,7 @@ class Parameterization:
             keys = jax.random.split(key, self.hamiltonian_locality)
 
             for locality in lindbladian_params:
-                lindbladian_params[locality] = amplitudes * jax.random.normal(
+                lindbladian_params[locality] = amplitudes[locality] * jax.random.normal(
                     keys[locality], lindbladian_params[locality].shape
                 )
 
@@ -544,8 +544,8 @@ class InterpolatedParameterization(Parameterization):
         lindblad_locality: int = 0,
         hamiltonian_graph: dict = {},
         lindblad_graph: dict = {},
-        hamiltonian_amplitudes: list[float] = [],
-        lindblad_amplitudes: list[float] = [],
+        hamiltonian_amplitudes: dict[int, float] = {},
+        lindblad_amplitudes: dict[int, float] = {},
     ):
         self.number_of_interpolation_points = len(times)
 
@@ -597,7 +597,7 @@ class InterpolatedParameterization(Parameterization):
             keys = jax.random.split(key, self.hamiltonian_locality)
 
             for locality in hamiltonian_params:
-                hamiltonian_params[locality] = amplitude * jax.random.normal(
+                hamiltonian_params[locality] = amplitude[locality] * jax.random.normal(
                     keys[locality], hamiltonian_params[locality].shape
                 )
 

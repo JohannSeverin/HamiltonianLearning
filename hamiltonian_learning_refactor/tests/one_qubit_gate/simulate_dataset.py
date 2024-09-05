@@ -42,32 +42,25 @@ P1_GIVEN_1 = [0.97]
 from qutip.qip.operations import ry, rx
 
 
-RISE_TIME = 15e-9 / TIME_UNIT
-FLATTOP_DURATION = 60e-9 / TIME_UNIT
-FALL_TIME = 15e-9 / TIME_UNIT
+
+AMPLITUDE = 1.5e0
+CENTER = 50
+SIGMA = 20
+
 
 # Gate to check
-rise_func = lambda t: 1.5e-2 * t / RISE_TIME
-fall_func = lambda t: 1.5e-2 * (1 - (t - RISE_TIME - FLATTOP_DURATION) / FALL_TIME)
-platue_func = lambda t: 1.5e-2
+from scipy.stats import norm
 
 def time_dependent_I(t, args):
-    if t < RISE_TIME:
-        return rise_func(t)
-    elif t >= RISE_TIME and t < RISE_TIME + FLATTOP_DURATION:
-        return platue_func(t)
-    elif t >= RISE_TIME + FLATTOP_DURATION and t < RISE_TIME + FLATTOP_DURATION + FALL_TIME:
-        return fall_func(t)
-    else:
-        return 0
+    return (norm.pdf(t, loc=CENTER, scale=SIGMA) - norm.pdf(0, loc = CENTER, scale = SIGMA))* AMPLITUDE
 
 def time_dependent_Q(t, args):
     return 0.0 * np.ones_like(t)
 
 
 time_dependent_H = [
-    [qutip.sigmax(), time_dependent_Q],
-    [qutip.sigmay(), time_dependent_I],
+    [qutip.sigmax(), time_dependent_I],
+    [qutip.sigmay(), time_dependent_Q],
 ]
 
 
@@ -322,8 +315,17 @@ dropdowns.append(
 fig, ax = plt.subplots(1, 1, figsize=(8, 5))
 times = dataset["time"].values
 
-ax.plot(times, [time_dependent_I(t, {}) for t in times])
-ax.plot(times, [time_dependent_Q(t, {}) for t in times])
+ax.plot(times, [time_dependent_I(t, {}) for t in times], label = "I")
+ax.plot(times, [time_dependent_Q(t, {}) for t in times], label = "Q")
+
+ax.set(
+    title = "Pulse Shape",
+    xlabel = "Time",
+    ylabel = "Amplitude"
+)
+
+ax.legend()
+fig
 
 fig, ax = plt.subplots(1, 1, figsize=(8, 5))
 

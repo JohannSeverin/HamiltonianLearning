@@ -14,7 +14,7 @@ import jax.numpy as jnp
 
 jax.config.update("jax_enable_x64", True)
 
-from typing import List
+from typing import List, Callable
 
 #### Measurement class ####
 from pathlib import Path
@@ -128,7 +128,7 @@ class Measurements:
         self.loss = loss
         self.batch_size = batch_size
 
-    def get_loss_fn(self):
+    def get_loss_fn(self) -> Callable:
         if self.batch_size > 1:
             return self._get_looped_loss_fn()
         else:
@@ -153,7 +153,7 @@ class Measurements:
                 # Return the function to be used
                 return loss_fn
 
-    def _get_looped_loss_fn(self):
+    def _get_looped_loss_fn(self) -> Callable:
         inner_func = available_losses[self.loss]
 
         if self.perfect_measurement:
@@ -180,7 +180,7 @@ class Measurements:
             )
 
             @partial(jax.jit)
-            def loss_fn(states, data):
+            def loss_fn(states, data) -> jnp.ndarray:
                 # move measurement basis to first position and split in batch size
                 data_batched = jnp.moveaxis(data, -2, 0)
 
