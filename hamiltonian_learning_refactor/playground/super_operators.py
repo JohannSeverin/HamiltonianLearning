@@ -9,7 +9,10 @@ from hamiltonian_learning import Solver
 from itertools import product
 from functools import partial
 
-from superkets import density_matrix_to_superket, superket_to_density_matrix
+from playground.super_states import (
+    density_matrix_to_superket,
+    superket_to_density_matrix,
+)
 from utils.operators import sigma_x, sigma_y, sigma_z, identity
 from utils.operators import gate_y_90, gate_y_270, gate_x_90, gate_x_270
 from utils.tensor import tensor_product
@@ -61,22 +64,30 @@ def _chi_to_pauli_matrix(nqubits):
     TODO: This can be simplified significantly by finding the matrix from looking at indicies
     """
     single_qubit_states = single_qubit_pauli
-    multi_qubit_paulis = jnp.stack(
-        [
-            tensor_product(states)
-            for states in product(single_qubit_states, repeat=nqubits)
-        ]
-    ).reshape(-1, 2**nqubits, 2**nqubits)
 
-    all_traces = jnp.einsum(
+    single_qubit_trace_combination = jnp.einsum(
         "iab, jbc, kcd, lda->ijkl",
-        multi_qubit_paulis,
-        multi_qubit_paulis,
-        multi_qubit_paulis,
-        multi_qubit_paulis,
+        single_qubit_states,
+        single_qubit_states,
+        single_qubit_states,
+        single_qubit_states,
     )
 
-    return all_traces
+    if nqubits == 1:
+        return single_qubit_trace_combination
+    else:
+        multi_qubit_trace_combination = single_qubit_trace_combination.copy()
+        for qubit in range(1, nqubits):
+            dimension = 4**qubit
+
+            multi_qubit_trace_combination = multi_qubit_trace_combination.reshape(
+                [dimension, 1] * 4
+            ) * single_qubit_trace_combination.reshape([1, 4] * 4)
+
+            multi_qubit_trace_combination = multi_qubit_trace_combination.reshape(
+                [4 * dimension] * 4
+            )
+    return multi_qubit_trace_combination
 
 
 def appply_pauli_transfer_matrix(pauli_transfer_matrix, superket):
