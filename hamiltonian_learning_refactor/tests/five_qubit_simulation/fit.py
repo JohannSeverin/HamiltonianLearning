@@ -9,10 +9,10 @@ from functools import partial
 jax.config.update("jax_platform_name", 'gpu')
 
 # Test line for 2 qubit data 
-dataset = xr.load_dataset("/home/archi1/projects/HamiltonianLearning/hamiltonian_learning_refactor/tests/two_qubit_simulation/dataset.zarr", engine="zarr")
+# dataset = xr.load_dataset("/home/archi1/projects/HamiltonianLearning/hamiltonian_learning_refactor/tests/two_qubit_simulation/dataset.zarr", engine="zarr")
 
 # This runs 5 qubit data
-# dataset = xr.load_dataset("dataset.zarr", engine="zarr")
+dataset = xr.load_dataset("dataset.zarr", engine="zarr")
 
 data = dataset.sampled_outcome
 data = jnp.array(data)
@@ -32,7 +32,7 @@ PERFECT_MEASUREMENTS = True
 HAMILTONIAN_LOCALITY = 2
 LINDLAD_LOCALITY = 1
 
-CLIP = 1e-2 # Clip harder if no dissipation or SPAM
+CLIP = 1e-3 # Clip harder if no dissipation or SPAM
 
 # Solver parameters
 INITIAL_STEPSIZE = 1.0
@@ -47,8 +47,8 @@ LOSS = "squared_difference" # "squared_difference" OR "multinomial"
 USE_WEIGHTS = False # If squared differences this determines if we should weigh the points according to the estimated std
 
 # Optimizer Parameters
-LEARNING_RATE = 1e-4
-ITERATIONS = 1
+LEARNING_RATE = 1e-5
+ITERATIONS = 100
 
 # Initial guesses will be taken from normal distributions with widths 
 HAMILTONIAN_GUESS_ORDER = 1e-4
@@ -56,8 +56,8 @@ LINDLADIAN_GUESS_ORDER = 1e-5
 
 # Memory to computational time trade-offs
 # Prioritize Measurement Basis and Time Scans over initial size since they do not require re-evolving the states
-BATCH_SIZE_INIT_STATES = 4 ** 2 # Number of initial states to use in the batch
-BATCH_SIZE_MEASUREMENT_BASIS = 3 ** 1 # Number of measurement basis to use in the batch
+BATCH_SIZE_INIT_STATES = 4 ** 3 # Number of initial states to use in the batch
+BATCH_SIZE_MEASUREMENT_BASIS = 3 ** 3 # Number of measurement basis to use in the batch
 SCAN_TIMES = False # If true timesteps are looped to save memory
 
 
