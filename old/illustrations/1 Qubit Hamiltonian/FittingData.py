@@ -226,16 +226,32 @@ for i, param in enumerate(["X", "Y", "Z"]):
 fig.tight_layout()
 fig.savefig("ParameterScan.svg")
 
+uniform_probs = jnp.ones_like(probs) / 2
 
 # P value estimate for the fit
 sampled_from_fit = Binomial(total_count=SAMPLES, probs=probs[..., 1]).sample(
     1000, seed=jax.random.PRNGKey(0)
 )
 
+sampled_from_uniform = Binomial(
+    total_count=SAMPLES, probs=uniform_probs[..., 1]
+).sample(1000, seed=jax.random.PRNGKey(0))
+
 sampled_LLH = -(
     Binomial(total_count=SAMPLES, probs=probs[..., 1])
     .log_prob(sampled_from_fit)
     .sum(axis=(1, 2, 3))
+)
+
+sampled_LLH_uniform = -(
+    Binomial(total_count=SAMPLES, probs=uniform_probs[..., 1]).log_prob(
+        sampled_from_uniform
+    )
+    # .sum(axis=(1, 2, 3))
+)
+
+uniform_LLH = (
+    -Binomial(total_count=SAMPLES, probs=uniform_probs[..., 1]).log_prob(data).sum()
 )
 
 fig, ax = plt.subplots(1, 1, figsize=(6, 4))
@@ -247,6 +263,7 @@ ax.set(
 )
 
 ax.hist(sampled_LLH, bins=30, alpha=0.5, label="Sampled LLH", density=True)
+ax.hist(sampled_LLH_uniform, bins=30, alpha=0.5, label="Sampled LLH", density=True)
 
 ax.axvline(loss, color="r", linestyle="--", label="Data LLH")
 
@@ -261,4 +278,4 @@ ax.text(0.5, 0.65, transform=ax.transAxes, s=f"P-value: {pval:.3f}", ha="center"
 
 ax.legend()
 
-fig.savefig("PValueEstimate.svg")
+# fig.savefig("PValueEstimate.svg")

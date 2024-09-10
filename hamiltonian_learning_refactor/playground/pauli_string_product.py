@@ -67,7 +67,29 @@ jnp.kron(jnp.kron(lookup(), lookup()), lookup())[2, 1]
 if __name__ == "__main__":
     DT1 = jnp.array([[0.25, -0.25j, 0], [0.25j, 0.25, 0], [0, 0, 0]])
 
-    normalization = jnp.einsum("mnk, mn -> k", lookup(), chi)
+    normalization = jnp.einsum("mnk, mn -> k", lookup()[1:, 1:, 1:], DT1[:, :])
 
 
-jnp.nonzero(jnp.kron(lookup(), lookup()).reshape(4, 4, 4, 4, 4, 4)[..., 2, 2])
+jnp.nonzero(lookup().reshape(4, 4, 4)[..., 3])
+jnp.nonzero(jnp.kron(lookup(), lookup()).reshape(4, 4, 4, 4, 4, 4)[..., 0, 0])
+
+
+# TODO: Add sparse to compress the lookup table. It is very sparse!
+from jax.experimental import sparse
+
+sparse.sparsify(lookup())
+
+sparse_lookup = sparse.BCOO.fromdense(lookup())
+kron = sparse.sparsify(jnp.kron)
+
+kron(
+    kron(kron(kron(sparse_lookup, sparse_lookup), sparse_lookup), sparse_lookup),
+    sparse_lookup,
+)
+
+
+sparse.sparsify(jnp.kron)(
+    sparse.BCOO.fromdense(lookup()), sparse.BCOO.fromdense(lookup())
+)
+
+sparse.BCOO.fromdense(lookup())

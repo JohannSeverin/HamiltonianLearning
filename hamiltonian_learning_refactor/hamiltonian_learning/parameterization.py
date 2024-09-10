@@ -64,6 +64,47 @@ def _convert_pauli_to_hamiltonians_with_time(
 
 
 @partial(jit, static_argnums=(1, 2, 3))
+def _sum_interaction_hamiltonian_to_vector(tensors, connections, n_qubits, locality):
+    shape = (4,) * n_qubits
+    output = jnp.zeros(shape, dtype=jnp.float64)
+
+    # Loop over connection elements
+    for i in range(len(connections)):
+
+        # Need to calculate the index order for permuting the tensor so the desired qubits interact
+        order = [-1] * n_qubits
+        connection = connections[i]
+
+        for j, conn in enumerate(connection):
+            order[conn] = j
+
+        fill_with = list(range(locality, n_qubits))
+
+        for j, o in enumerate(order):
+            if o == -1:
+                order[j] = fill_with.pop(0)
+
+        # create the Hamiltonian contribution
+
+        H = jnp.zeros((4,) * locality, dtype=jnp.float64)
+
+        slices = [slice(1, None)] * locality
+
+        H = H.at[*slices].set(tensors[i].reshape((3,) * locality))
+
+        # Fill with zeros to have proper hilbert space
+        for j in range(n_qubits - locality):
+            dummy_H = jnp.zeros_like(H)
+            H = jnp.stack([H, dummy_H, dummy_H, dummy_H], axis=-1)
+
+        H = H.transpose(order)
+
+        output += H
+
+    return output
+
+
+@partial(jit, static_argnums=(1, 2, 3))
 def _sum_interaction_hamiltonian(tensors, connections, n_qubits, locality):
     shape = (2,) * (2 * n_qubits)
     output = jnp.zeros(shape, dtype=jnp.complex128)
@@ -279,6 +320,207 @@ def _sum_interaction_jump_operators(tensors, connections, n_qubits, locality):
 
 
 ### PARAMETRIZATION CLASS ###
+class SuperOperatorParameterization:
+
+    def __init__(
+        self,
+        n_qubits: int,
+        qubit_levels: int = 2,
+        hamiltonian_locality: int = 0,
+        lindblad_locality: int = 0,
+        hamiltonian_graph: dict = {},
+        lindblad_graph: dict = {},
+        hamiltonian_amplitudes: list[float] = [],
+        lindblad_amplitudes: list[float] = [],
+    ):
+
+        # Load Params
+        self.n_qubits = n_qubits
+        self.qubit_levels = qubit_levels
+        self.hilbert_size = self.qubit_levels**n_qubits
+        self.generators = self.qubit_levels**2 - 1  # not including identity
+
+        # Set values to locality
+        self.hamiltonian_locality = hamiltonian_locality
+        self.lindblad_locality = lindblad_locality
+
+        # Or overwrite with graph
+        self.hamiltonian_graph = hamiltonian_graph
+        self.lindblad_graph = lindblad_graph
+
+        # Generate graphs if not given
+        if len(hamiltonian_graph) == 0:
+            self.hamiltonian_graph = {
+                i: tuple(itertools.combinations(range(n_qubits), r=i))
+                for i in range(1, self.hamiltonian_locality + 1)
+            }
+
+        if len(lindblad_graph) == 0:
+            self.lindblad_graph = {
+                i: tuple(itertools.combinations(range(n_qubits), r=i))
+                for i in range(1, self.lindblad_locality + 1)
+            }
+
+        self.number_of_jump_operators = _calculate_number_of_generators(
+            lindblad_graph=self.lindblad_graph
+        )
+
+        # Generate Hamiltonian Parameters
+
+        self.hamiltonian_params = self._generate_hamiltonian_params(
+            hamiltonian_amplitudes
+        )
+        self.lindbladian_params = self._generate_lindbladian_params(lindblad_amplitudes)
+
+    def _generate_hamiltonian_params(self, amplitude={}, seed=0):
+        """
+        Generates the Hamiltonian parameters based on the Hamiltonian graph.
+
+        Returns:
+            dict: A dictionary containing the Hamiltonian parameters for each locality.
+        """
+        hamiltonian_params = {
+            1: jnp.zeros((self.n_qubits, self.generators), dtype=jnp.complex128)
+        }
+
+        hamiltonian_connections = {
+            locality: len(graph) for locality, graph in self.hamiltonian_graph.items()
+        }
+        hamiltonian_params_shape = {
+            locality: [hamiltonian_connections[locality]] + [self.generators] * locality
+            for locality in hamiltonian_connections
+        }
+        hamiltonian_params.update(
+            {
+                locality: jnp.zeros(
+                    hamiltonian_params_shape[locality], dtype=jnp.complex128
+                )
+                for locality in hamiltonian_connections
+            }
+        )
+
+        if len(amplitude) > 0:
+            key = jax.random.PRNGKey(seed)
+            keys = jax.random.split(key, self.hamiltonian_locality)
+
+            for locality in hamiltonian_params:
+                hamiltonian_params[locality] = amplitude[locality] * jax.random.normal(
+                    keys[locality], hamiltonian_params[locality].shape
+                )
+
+        return hamiltonian_params
+
+    def _generate_lindbladian_params(self, amplitudes=None, seed=0):
+        """
+        Generates the Lindbladian parameters based on the Lindbladian graph.
+
+        Returns:
+            dict: A dictionary containing the Lindbladian parameters for each locality.
+        """
+        lindbladian_params = {
+            1: jnp.zeros(
+                (self.n_qubits, self.generators + 1, self.generators + 1),
+                dtype=jnp.float64,
+            )
+        }
+
+        lindbladian_connections = {
+            locality: len(graph) for locality, graph in self.lindblad_graph.items()
+        }
+        lindbladian_params_shape = {
+            locality: [lindbladian_connections[locality]]
+            + [self.generators + 1] * 2 * locality
+            for locality in lindbladian_connections
+        }
+        lindbladian_params.update(
+            {
+                locality: jnp.zeros(
+                    lindbladian_params_shape[locality], dtype=jnp.float64
+                )
+                for locality in lindbladian_connections
+            }
+        )
+
+        if amplitudes:
+            key = jax.random.PRNGKey(seed)
+            keys = jax.random.split(key, self.hamiltonian_locality)
+
+            for locality in lindbladian_params:
+                lindbladian_params[locality] = amplitudes[locality] * jax.random.normal(
+                    keys[locality], lindbladian_params[locality].shape
+                )
+
+        return lindbladian_params
+
+    def set_hamiltonian_params(self, hamiltonian_params: dict):
+        """
+        Sets the Hamiltonian parameters.
+        """
+
+        for locality, params_at_locality in hamiltonian_params.items():
+            if isinstance(params_at_locality, dict):
+
+                print("Settings params will assume only one connection")
+                for key, param in params_at_locality.items():
+                    # Convert key to index
+                    idx = ["xyz".index(key[i]) for i in range(len(key))]
+                    self.hamiltonian_params[locality] = (
+                        self.hamiltonian_params[locality].at[0, *idx].set(param)
+                    )
+
+            else:
+                self.hamiltonian_params[locality] = params_at_locality
+
+    def set_lindbladian_params(self, lindbladian_params: dict):
+        """
+        Sets the Lindbladian parameters.
+        """
+
+        for locality, params_at_locality in lindbladian_params.items():
+            if isinstance(params_at_locality, dict):
+
+                for connection, params_at_connection in params_at_locality.items():
+
+                    print("Settings params will assume only one connection")
+                    for key, param in params_at_locality.items():
+                        # Convert key to index
+                        idx = ["ixyz".index(key[i]) for i in range(len(key))]
+                        self.lindbladian_params[locality] = (
+                            self.lindbladian_params[locality].at[0, *idx].set(param)
+                        )
+
+            else:
+                self.lindbladian_params[locality] = params_at_locality
+
+    def _get_hamiltonian_generator(self):
+
+        def _hamiltonian_generator(parameters):
+            """
+            Return a list of all the coefficients in front of paulis in the Hamiltonian
+            """
+            hamiltonian_coefficients = jnp.zeros(
+                (4,) * self.n_qubits, dtype=jnp.float64
+            )
+
+            for locality in range(1, self.hamiltonian_locality + 1):
+                hamiltonian_coefficients += _sum_interaction_hamiltonian_to_vector(
+                    parameters[locality],
+                    self.hamiltonian_graph[locality],
+                    self.n_qubits,
+                    locality,
+                )
+            
+            return hamiltonian_coefficients
+
+        return _hamiltonian_generator
+
+    def _get_dissipation_matrix(self):
+        pass
+
+    def get_generator_for_pauli_transfer_matrix(self):
+        pass
+
+
 class Parameterization:
     # TODO: Add docstrings
     # TODO: Add type hints
@@ -657,18 +899,30 @@ if __name__ == "__main__":
     H_LOCALITY = 2
     L_LOCALITY = 0
 
-    parameters = InterpolatedParameterization(
+    parameters = SuperOperatorParameterization(
         NQUBITS,
         hamiltonian_locality=H_LOCALITY,
         lindblad_locality=L_LOCALITY,
-        times=jnp.arange(0, 40, 4),
-        hamiltonian_amplitudes=1.0,
+        # times=jnp.arange(0, 40, 4),
+        hamiltonian_amplitudes=[],
     )
 
-    params = parameters.hamiltonian_params
-    hamiltonian_generator = parameters.get_hamiltonian_generator()
+    # params = parameters.hamiltonian_params
+    # hamiltonian_generator = parameters.get_hamiltonian_generator()
 
-    hamiltonian_generator(params)[0].imag
+    # hamiltonian_generator(params)[0].imag
+
+    hparams = parameters.hamiltonian_params
+    hparams[1] = jnp.array([[1, 0, 0], [0, 1, 0]], dtype=jnp.float64)
+    hparams[2] = jnp.array([[[1, 0, 0], [0, 0, 0], [0, 0, 0]]], dtype=jnp.float64)
+
+    hamiltonian_generator = parameters._get_hamiltonian_generator()
+
+    hamiltonian = hamiltonian_generator(hparams)
+
+    _sum_interaction_hamiltonian_to_vector(
+        hparams[2], parameters.hamiltonian_graph[2], NQUBITS, 2
+    )
 
     # jump_operator_generator = parameters.get_jump_operator_generator()
 

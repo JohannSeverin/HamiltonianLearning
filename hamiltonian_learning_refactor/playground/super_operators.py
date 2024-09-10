@@ -160,3 +160,26 @@ if __name__ == "__main__":
     x_gate_PTM = chi_matrix_to_pauli_transfer_matrix(test_gate, 1)
 
     pauli_transfer_matrix_to_chi_matrix(x_gate_PTM, 1)
+
+    # Dephasing tests
+    # Generator in chi for dephasing
+    dephasing_chi = jnp.zeros((4, 4), dtype=jnp.complex128)
+    dephasing_chi = dephasing_chi.at[0, 0].set(-0.1)
+    dephasing_chi = dephasing_chi.at[3, 3].set(+0.1)
+
+    chi_matrix_to_pauli_transfer_matrix(dephasing_chi, 1)
+
+    from jax.scipy.linalg import expm
+
+    expm(chi_matrix_to_pauli_transfer_matrix(dephasing_chi, 1))
+
+    # Test for spontaneous emission
+    decay_chi = jnp.zeros((4, 4), dtype=jnp.complex128)
+    decay_chi = decay_chi.at[1:3, 1:3].set(0.1)
+    decay_chi = decay_chi.at[1, 2].set(-1j * 0.1)
+    decay_chi = decay_chi.at[2, 1].set(1j * 0.1)
+    decay_chi = decay_chi.at[0, 3].set(0.1)
+    decay_chi = decay_chi.at[3, 0].set(0.1)
+    decay_chi = decay_chi.at[0, 0].set(-0.2)
+
+    expm(chi_matrix_to_pauli_transfer_matrix(decay_chi, 1))
