@@ -136,7 +136,7 @@ evolve_states = solver.create_solver(TIMES)
 @jax.jit
 def loss_fn(
     params,
-):
+):  
     """
     Loss function to be minimized
     """

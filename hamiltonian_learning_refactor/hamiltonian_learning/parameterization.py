@@ -212,6 +212,28 @@ def _pauli_product_with_id(locality: int):
 
 
 @partial(jit, static_argnums=(1, 2, 3))
+def _to_cholesky_no_dummy(tensors, connections, n_qubits, locality):
+    """
+    Generates the jump operators based on the Lindbladian parameters.
+    """
+    number_of_generators = 4**locality - 1
+    tensors = tensors.reshape(
+        (len(connections), number_of_generators, number_of_generators)
+    )
+
+    # The calzone
+    output_cholesky = jnp.zeros(
+        (len(connections), number_of_generators, number_of_generators),
+        dtype=jnp.complex128,
+    )
+
+    output_cholesky += jnp.tril(tensors)
+    output_cholesky += 1j * jnp.swapaxes(jnp.triu(tensors), -2, -1)
+
+    return output_cholesky
+
+
+@partial(jit, static_argnums=(1, 2, 3))
 def _to_cholesky(tensors, connections, n_qubits, locality):
     """
     Generates the jump operators based on the Lindbladian parameters.
@@ -319,6 +341,156 @@ def _sum_interaction_jump_operators(tensors, connections, n_qubits, locality):
     return output
 
 
+def _sum_interaction_dissipation_matrices(tensors, connections, n_qubits, locality):
+    shape = (4,) * (2 * n_qubits)
+    output = jnp.zeros(shape, dtype=jnp.complex128)
+
+    # Loop over connection elements
+    for i in range(len(connections)):
+
+        # Need to calculate the index order for permuting the tensor so the desired qubits interact
+        order = [-1] * n_qubits
+        connection = connections[i]
+
+        for j, conn in enumerate(connection):
+            order[conn] = j
+
+        fill_with = list(range(locality, n_qubits))
+
+        for j, o in enumerate(order):
+            if o == -1:
+                order[j] = fill_with.pop(0)
+
+        order = order + [n_qubits + i for i in order]
+
+        # Create the Hamiltonian contribution
+        local_dissipation_matrix = jnp.zeros(
+            (4**n_qubits, 4**n_qubits), dtype=jnp.complex128
+        )
+        local_dissipation_matrix = local_dissipation_matrix.at[
+            1 : 4**locality, 1 : 4**locality
+        ].set(tensors[i][1:, 1:])
+        local_dissipation_matrix = local_dissipation_matrix.reshape(
+            (4,) * (n_qubits * 2)
+        )
+
+        local_dissipation_matrix = local_dissipation_matrix.transpose(order)
+
+        output += local_dissipation_matrix
+
+    return output
+
+
+# Transformation between chi and PTM matrices
+from utils.operators import sigma_x, sigma_y, sigma_z, identity
+
+single_qubit_pauli = jnp.stack([identity(2), sigma_x(2), sigma_y(2), sigma_z(2)])
+
+
+@jax.jit
+def levi_cevita():
+    epsilon = jnp.zeros((3, 3, 3), dtype=jnp.int8)
+    epsilon = epsilon.at[0, 1, 2].set(1)
+    epsilon = epsilon.at[1, 2, 0].set(1)
+    epsilon = epsilon.at[2, 0, 1].set(1)
+    epsilon = epsilon.at[0, 2, 1].set(-1)
+    epsilon = epsilon.at[1, 0, 2].set(-1)
+    epsilon = epsilon.at[2, 1, 0].set(-1)
+    return epsilon
+
+
+@jax.jit
+def lookup():
+    lookup = jnp.zeros((4, 4, 4), dtype=jnp.int8)
+
+    # Setup i not equal to j
+    lookup = lookup.at[1:, 1:, 1:].set(levi_cevita())
+
+    # Setup i equal to j
+    lookup = lookup.at[0, 0, 0].set(1)
+    lookup = lookup.at[1, 1, 0].set(1)
+    lookup = lookup.at[2, 2, 0].set(1)
+    lookup = lookup.at[3, 3, 0].set(1)
+
+    # Setup i = 0 and j = 1, 2, 3
+    lookup = lookup.at[0, 1, 1].set(1)
+    lookup = lookup.at[0, 2, 2].set(1)
+    lookup = lookup.at[0, 3, 3].set(1)
+
+    # Setup j = 0 and i = 1, 2, 3
+    lookup = lookup.at[1, 0, 1].set(1)
+    lookup = lookup.at[2, 0, 2].set(1)
+    lookup = lookup.at[3, 0, 3].set(1)
+
+    return lookup
+
+
+def lookup_for_qubit_number(n_qubits: int):
+    """
+    Returns the lookup table for a given number of qubits.
+    """
+    lookup_multiple_qubits = lookup()
+    for i in range(n_qubits - 1):
+        lookup_multiple_qubits = jnp.kron(lookup_multiple_qubits, lookup())
+
+    return lookup_multiple_qubits
+
+
+def _chi_normalization(dissipation_matrix: jnp.ndarray, n_qubits: int):
+    """
+    Normalizes the chi matrix.
+    """
+    dissipation_matrix = dissipation_matrix.at[0, 0].set(
+        -jnp.trace(dissipation_matrix[1:, 1:])
+    )
+
+    return dissipation_matrix
+
+
+@partial(jax.jit, static_argnums=0)
+def _chi_to_pauli_matrix(nqubits):
+    """
+    Return the Pauli transfer matrix
+
+    TODO: This can be simplified significantly by finding the matrix from looking at indicies
+    """
+    single_qubit_states = single_qubit_pauli
+
+    single_qubit_trace_combination = jnp.einsum(
+        "iab, jbc, kcd, lda->ijkl",
+        single_qubit_states,
+        single_qubit_states,
+        single_qubit_states,
+        single_qubit_states,
+    )
+
+    if nqubits == 1:
+        return single_qubit_trace_combination
+    else:
+        multi_qubit_trace_combination = single_qubit_trace_combination.copy()
+        for qubit in range(1, nqubits):
+            dimension = 4**qubit
+
+            multi_qubit_trace_combination = multi_qubit_trace_combination.reshape(
+                [dimension, 1] * 4
+            ) * single_qubit_trace_combination.reshape([1, 4] * 4)
+
+            multi_qubit_trace_combination = multi_qubit_trace_combination.reshape(
+                [4 * dimension] * 4
+            )
+    return multi_qubit_trace_combination
+
+
+@partial(jax.jit, static_argnums=1)
+def chi_matrix_to_pauli_transfer_matrix(transfer_matrix, nqubits):
+    """
+    Convert a transfer matrix to a Pauli transfer matrix
+    """
+    basis_change_matrix = _chi_to_pauli_matrix(nqubits) / 2**nqubits
+
+    return jnp.einsum("ijkl, ...jl->...ik", basis_change_matrix, transfer_matrix)
+
+
 ### PARAMETRIZATION CLASS ###
 class SuperOperatorParameterization:
 
@@ -338,7 +510,7 @@ class SuperOperatorParameterization:
         self.n_qubits = n_qubits
         self.qubit_levels = qubit_levels
         self.hilbert_size = self.qubit_levels**n_qubits
-        self.generators = self.qubit_levels**2 - 1  # not including identity
+        self.generators = self.qubit_levels**2  # not including identity
 
         # Set values to locality
         self.hamiltonian_locality = hamiltonian_locality
@@ -419,7 +591,7 @@ class SuperOperatorParameterization:
         """
         lindbladian_params = {
             1: jnp.zeros(
-                (self.n_qubits, self.generators + 1, self.generators + 1),
+                (self.n_qubits, self.generators, self.generators),
                 dtype=jnp.float64,
             )
         }
@@ -429,7 +601,7 @@ class SuperOperatorParameterization:
         }
         lindbladian_params_shape = {
             locality: [lindbladian_connections[locality]]
-            + [self.generators + 1] * 2 * locality
+            + [self.generators] * 2 * locality
             for locality in lindbladian_connections
         }
         lindbladian_params.update(
@@ -509,16 +681,99 @@ class SuperOperatorParameterization:
                     self.n_qubits,
                     locality,
                 )
-            
-            return hamiltonian_coefficients
+
+            return hamiltonian_coefficients.reshape(4**self.n_qubits)
 
         return _hamiltonian_generator
 
-    def _get_dissipation_matrix(self):
-        pass
+    def _get_dissipation_matrix_generator(self):
+
+        def lindbladian_generator(lindbladian_params: dict):
+            """
+            Creates the jump operators based on the Lindbladian parameters.
+            """
+            dissipation_matrix = jnp.zeros(
+                (4, 4) * self.n_qubits,
+                dtype=jnp.complex128,
+            )
+
+            for locality in range(1, self.lindblad_locality + 1):
+
+                choleskies = _to_cholesky(
+                    lindbladian_params[locality],
+                    self.lindblad_graph[locality],
+                    self.n_qubits,
+                    locality,
+                )
+
+                local_dissipation_matrix = jnp.einsum(
+                    "...ij, ...il -> ...jl",
+                    choleskies,
+                    jnp.conj(choleskies),
+                )
+
+                inflated_dissipation_matrix = _sum_interaction_dissipation_matrices(
+                    local_dissipation_matrix,
+                    self.lindblad_graph[locality],
+                    self.n_qubits,
+                    locality,
+                )
+
+                dissipation_matrix += inflated_dissipation_matrix
+
+            dissipation_matrix = dissipation_matrix.reshape(
+                4**self.n_qubits, 4**self.n_qubits
+            )[1:, 1:]
+
+            return dissipation_matrix
+
+        return lindbladian_generator
 
     def get_generator_for_pauli_transfer_matrix(self):
-        pass
+
+        hamiltonian_vector_generator = self._get_hamiltonian_generator()
+        dissipation_matrix_generator = self._get_dissipation_matrix_generator()
+
+        lookup_table = lookup_for_qubit_number(self.n_qubits)
+
+        def create_dchi(hamiltonian_params, lindbladian_params):
+            """
+            Create the differential chi matrix
+            """
+
+            dchi = jnp.zeros((4**self.n_qubits, 4**self.n_qubits), dtype=jnp.complex128)
+
+            # Set the Hamiltonian part
+            hamiltonian_vector = hamiltonian_vector_generator(hamiltonian_params)
+            dchi = dchi.at[1:, 0].set(1j * hamiltonian_vector[1:])
+            dchi = dchi.at[0, 1:].set(-1j * hamiltonian_vector[1:])
+
+            # Dissipation part
+            dissipation_matrix = dissipation_matrix_generator(lindbladian_params)
+            dchi = dchi.at[1:, 1:].set(dissipation_matrix)
+
+            # Trace preservation
+            dchi = dchi.at[0, 0].set(-jnp.trace(dissipation_matrix[1:, 1:]))
+
+            # Normalization
+            normalization_contribution = jnp.einsum(
+                "ij, kij->k", dissipation_matrix, lookup_table[1:, 1:, 1:]
+            )
+
+            dchi = dchi.at[0, 1:].add(-normalization_contribution)
+            dchi = dchi.at[1:, 0].add(-normalization_contribution)
+
+            return dchi
+
+        def transfer_generator(hamiltonian_params, lindbladian_params):
+            """
+            Returns the Pauli transfer matrix
+            """
+            dchi = create_dchi(hamiltonian_params, lindbladian_params)
+
+            return chi_matrix_to_pauli_transfer_matrix(dchi, self.n_qubits)
+
+        return transfer_generator
 
 
 class Parameterization:
@@ -537,6 +792,7 @@ class Parameterization:
         lindblad_graph: dict = {},
         hamiltonian_amplitudes: list[float] = [],
         lindblad_amplitudes: list[float] = [],
+        seed: int = 0,
     ):
         assert hamiltonian_locality is not None or hamiltonian_graph is not None
         assert lindblad_locality is not None or lindblad_graph is not None
@@ -573,13 +829,13 @@ class Parameterization:
         )
 
         # Generate Hamiltonian Parameters
-
+        self.seed = seed
         self.hamiltonian_params = self._generate_hamiltonian_params(
             hamiltonian_amplitudes
         )
         self.lindbladian_params = self._generate_lindbladian_params(lindblad_amplitudes)
 
-    def _generate_hamiltonian_params(self, amplitude={}, seed=0):
+    def _generate_hamiltonian_params(self, amplitude={}):
         """
         Generates the Hamiltonian parameters based on the Hamiltonian graph.
 
@@ -607,17 +863,19 @@ class Parameterization:
         )
 
         if len(amplitude) > 0:
-            key = jax.random.PRNGKey(seed)
+            key = jax.random.PRNGKey(self.seed)
             keys = jax.random.split(key, self.hamiltonian_locality)
 
             for locality in hamiltonian_params:
-                hamiltonian_params[locality] = amplitude[locality] * jax.random.normal(
+                hamiltonian_params[locality] = amplitude[
+                    locality - 1
+                ] * jax.random.normal(
                     keys[locality], hamiltonian_params[locality].shape
                 )
 
         return hamiltonian_params
 
-    def _generate_lindbladian_params(self, amplitudes=None, seed=0):
+    def _generate_lindbladian_params(self, amplitudes=None):
         """
         Generates the Lindbladian parameters based on the Lindbladian graph.
 
@@ -649,11 +907,13 @@ class Parameterization:
         )
 
         if amplitudes:
-            key = jax.random.PRNGKey(seed)
+            key = jax.random.PRNGKey(self.seed)
             keys = jax.random.split(key, self.hamiltonian_locality)
 
             for locality in lindbladian_params:
-                lindbladian_params[locality] = amplitudes[locality] * jax.random.normal(
+                lindbladian_params[locality] = amplitudes[
+                    locality - 1
+                ] * jax.random.normal(
                     keys[locality], lindbladian_params[locality].shape
                 )
 
@@ -897,7 +1157,7 @@ class InterpolatedParameterization(Parameterization):
 if __name__ == "__main__":
     NQUBITS = 2
     H_LOCALITY = 2
-    L_LOCALITY = 0
+    L_LOCALITY = 2
 
     parameters = SuperOperatorParameterization(
         NQUBITS,
@@ -924,10 +1184,14 @@ if __name__ == "__main__":
         hparams[2], parameters.hamiltonian_graph[2], NQUBITS, 2
     )
 
-    # jump_operator_generator = parameters.get_jump_operator_generator()
+    dissipation_generator = parameters._get_dissipation_matrix_generator()
 
-    # hamiltonian_generator(parameters.hamiltonian_params)
-    # jump_operator_generator(parameters.lindbladian_params)
+    lparams = parameters.lindbladian_params
+    # lparams[1] = jnp.array(
+    #     [[[[0, 0, 0], [0, 0, 0], [0, 0, 1]]], [[[0, 0, 0], [0, 1, 0], [0, 0, 0]]]],
+    #     dtype=jnp.float64,
+    # )
 
-    # %timeit hamiltonian = hamiltonian_generator(parameters.hamiltonian_params)
-    # %timeit jump_operators = jump_operator_generator(parameters.lindbladian_params)
+    transfer_generator = parameters.get_generator_for_pauli_transfer_matrix()
+
+    transfer_generator(hparams, lparams)

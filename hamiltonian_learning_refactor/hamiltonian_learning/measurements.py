@@ -85,10 +85,11 @@ def squared_loss(probs, data, samples):
     return jnp.sum((probs - data / samples) ** 2)
 
 
-def multinomial_likelihood(probs, data, samples):
+def multinomial_likelihood(probs, data, samples, epsilon=1e-10):
     """
     Calculate the multinomial likelihood
     """
+    probs = jnp.clip(probs, epsilon, 1 - epsilon)
     return (
         multinomial.Multinomial(
             total_count=samples,
@@ -148,6 +149,7 @@ class Measurements:
                     probs = _extract_diag_from_changed_basis(
                         states, basis_transformations
                     ).real
+                    probs = jnp.clip(probs, self.clip, 1 - self.clip)
                     return inner_func(probs, data, self.samples)
 
                 # Return the function to be used
@@ -168,6 +170,7 @@ class Measurements:
                 state_diagonals = _extract_diag_from_changed_basis(
                     states, transformations
                 ).real
+                state_diagonals = jnp.clip(state_diagonals, self.clip, 1 - self.clip)
                 state_diagonals = jnp.moveaxis(state_diagonals, -2, 0)
                 new_loss = inner_func(state_diagonals, data, self.samples)
                 cumulative_loss += new_loss

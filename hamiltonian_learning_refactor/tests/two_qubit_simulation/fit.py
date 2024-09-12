@@ -45,8 +45,8 @@ USE_WEIGHTS = True # If squared differences this determines if we should weigh t
 
 LEARNING_RATE = 1e-4
 ITERATIONS = 1000
-HAMILTONIAN_GUESS_ORDER = 1e-3
-LINDLADIAN_GUESS_ORDER = 1e-5
+HAMILTONIAN_GUESS_ORDER = [1e-3]
+LINDLADIAN_GUESS_ORDER = [1e-5, 1e-5]
 
 
 # Define the parameterization classes
