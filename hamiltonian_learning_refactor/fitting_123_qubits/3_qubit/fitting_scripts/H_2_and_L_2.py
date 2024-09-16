@@ -10,7 +10,7 @@ dataset = xarray.open_dataset("../dataset.zarr", engine="zarr")
 data = dataset.sampled_outcome.values
 
 # System parameters
-NQUBITS = 2
+NQUBITS = 3
 
 # Experiment parameters
 TIMES = dataset.time.values
@@ -32,9 +32,9 @@ TOLERANCE = 1e-6
 
 # Optimzier parameters
 LEARNING_RATE_SCAN = 1e-4
-LEARNING_RATE_FINE = 2.5e-5
-ITERATIONS_SME = 250
-ITERATIONS_MLE = 1000
+LEARNING_RATE_FINE = 5e-5
+ITERATIONS_SME = 500
+ITERATIONS_MLE = 500
 
 loss = "squared_difference"
 

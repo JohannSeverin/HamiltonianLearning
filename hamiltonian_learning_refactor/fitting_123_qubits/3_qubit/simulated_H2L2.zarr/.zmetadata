@@ -1,0 +1,143 @@
+{
+    "metadata": {
+        ".zattrs": {},
+        ".zgroup": {
+            "zarr_format": 2
+        },
+        "final_gate/.zarray": {
+            "chunks": [
+                27
+            ],
+            "compressor": {
+                "blocksize": 0,
+                "clevel": 5,
+                "cname": "lz4",
+                "id": "blosc",
+                "shuffle": 1
+            },
+            "dtype": "<U3",
+            "fill_value": null,
+            "filters": null,
+            "order": "C",
+            "shape": [
+                27
+            ],
+            "zarr_format": 2
+        },
+        "final_gate/.zattrs": {
+            "_ARRAY_DIMENSIONS": [
+                "final_gate"
+            ]
+        },
+        "initial_gate/.zarray": {
+            "chunks": [
+                64
+            ],
+            "compressor": {
+                "blocksize": 0,
+                "clevel": 5,
+                "cname": "lz4",
+                "id": "blosc",
+                "shuffle": 1
+            },
+            "dtype": "<U6",
+            "fill_value": null,
+            "filters": null,
+            "order": "C",
+            "shape": [
+                64
+            ],
+            "zarr_format": 2
+        },
+        "initial_gate/.zattrs": {
+            "_ARRAY_DIMENSIONS": [
+                "initial_gate"
+            ]
+        },
+        "measurement_probabilities/.zarray": {
+            "chunks": [
+                21,
+                32,
+                14,
+                8
+            ],
+            "compressor": {
+                "blocksize": 0,
+                "clevel": 5,
+                "cname": "lz4",
+                "id": "blosc",
+                "shuffle": 1
+            },
+            "dtype": "<f8",
+            "fill_value": "NaN",
+            "filters": null,
+            "order": "C",
+            "shape": [
+                41,
+                64,
+                27,
+                8
+            ],
+            "zarr_format": 2
+        },
+        "measurement_probabilities/.zattrs": {
+            "_ARRAY_DIMENSIONS": [
+                "time",
+                "initial_gate",
+                "final_gate",
+                "outcome"
+            ]
+        },
+        "outcome/.zarray": {
+            "chunks": [
+                8
+            ],
+            "compressor": {
+                "blocksize": 0,
+                "clevel": 5,
+                "cname": "lz4",
+                "id": "blosc",
+                "shuffle": 1
+            },
+            "dtype": "<U3",
+            "fill_value": null,
+            "filters": null,
+            "order": "C",
+            "shape": [
+                8
+            ],
+            "zarr_format": 2
+        },
+        "outcome/.zattrs": {
+            "_ARRAY_DIMENSIONS": [
+                "outcome"
+            ]
+        },
+        "time/.zarray": {
+            "chunks": [
+                41
+            ],
+            "compressor": {
+                "blocksize": 0,
+                "clevel": 5,
+                "cname": "lz4",
+                "id": "blosc",
+                "shuffle": 1
+            },
+            "dtype": "<f8",
+            "fill_value": "NaN",
+            "filters": null,
+            "order": "C",
+            "shape": [
+                41
+            ],
+            "zarr_format": 2
+        },
+        "time/.zattrs": {
+            "_ARRAY_DIMENSIONS": [
+                "time"
+            ]
+        }
+    },
+    "zarr_consolidated_format": 1
+}

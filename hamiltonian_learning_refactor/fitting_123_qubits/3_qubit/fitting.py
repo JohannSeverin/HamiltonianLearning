@@ -19,8 +19,8 @@ MEASUREMENT_BASIS = ["X", "Y", "Z"]
 SAMPLES = dataset.attrs["SAMPLES"]
 
 # Model parameters
-HAMILTONIAN_LOCALITY = 3
-LINDLAD_LOCALITY = 1
+HAMILTONIAN_LOCALITY = 2
+LINDLAD_LOCALITY = 2
 
 # Solver parameters
 INITIAL_STEPSIZE = 1.0
@@ -31,8 +31,12 @@ ADJOINT = False
 TOLERANCE = 1e-6
 
 # Optimzier parameters
-LEARNING_RATE = 1e-4
-ITERATIONS = 2000
+LEARNING_RATE_SCAN = 1e-4
+LEARNING_RATE_FINE = 5e-5
+ITERATIONS_SME = 250
+ITERATIONS_MLE = 750
+
+loss = "squared_difference"
 
 
 # Define the parameterization classes
@@ -50,8 +54,9 @@ dynamics = Parameterization(
     NQUBITS,
     hamiltonian_locality=HAMILTONIAN_LOCALITY,
     lindblad_locality=LINDLAD_LOCALITY,
-    hamiltonian_amplitudes=[1e-6, 1e-6],
+    hamiltonian_amplitudes=[1e-3, 1e-5],
     lindblad_amplitudes=[1e-6, 1e-6],
+    seed = 0 
 )
 
 state_preparation = StatePreparation(
@@ -63,8 +68,8 @@ measurements = Measurements(
     samples=SAMPLES,
     basis=["Z", "X", "Y"],
     perfect_measurement=True,
-    loss="multinomial",
-    clip=1e-5,
+    loss=loss,
+    clip=1e-8,
 )
 
 # Define the solver for time dynamics
@@ -103,7 +108,7 @@ def loss(params):
 
     states = evolve_states(initial_states, hamiltonian, lindbladian)
 
-    return -calculate_log_likelihood(states, data)
+    return calculate_log_likelihood(states, data)
 
 
 # Define the gradient of the loss function
@@ -113,11 +118,48 @@ value_and_grad = jax.jit(jax.value_and_grad(loss))
 from optax import adam, apply_updates
 
 params = (state_preparation_params, hamiltonian_params, lindbladian_params)
-opt = adam(learning_rate=LEARNING_RATE)
+opt = adam(learning_rate=LEARNING_RATE_SCAN)
 state = opt.init(params)
 
 # Update
-for i in range(ITERATIONS):
+for i in range(ITERATIONS_SME):
+    loss, grads = value_and_grad(params)
+    updates, state = opt.update(grads, state)
+    params = apply_updates(params, updates)
+
+    print(f"Iteration {i:03d} - Loss: {loss:.3e}")
+
+
+# Change to multinomial
+measurements.loss = "multinomial"
+calculate_log_likelihood = measurements.get_loss_fn()
+
+
+
+# Define the loss function
+def loss(params):
+    state_preparation_params, hamiltonian_params, lindbladian_params = params
+
+    initial_states = generate_initial_states(state_preparation_params)
+    hamiltonian = generate_hamiltonian(hamiltonian_params)
+    lindbladian = generate_lindbladian(lindbladian_params)
+
+    states = evolve_states(initial_states, hamiltonian, lindbladian)
+
+    return - calculate_log_likelihood(states, data)
+
+
+# Define the gradient of the loss function
+value_and_grad = jax.jit(jax.value_and_grad(loss))
+
+# Setup the optimizer
+from optax import adam, apply_updates
+
+opt = adam(learning_rate=LEARNING_RATE_FINE)
+state = opt.init(params)
+
+# Update
+for i in range(ITERATIONS_MLE):
     loss, grads = value_and_grad(params)
     updates, state = opt.update(grads, state)
     params = apply_updates(params, updates)
@@ -140,20 +182,20 @@ simulated = dataset.measurement_probabilities.copy()
 simulated.values = probs
 
 # Save the dataset 
-simulated.to_zarr("simulated.zarr", mode="w")
+simulated.to_zarr("simulated_H2L2.zarr", mode="w")
 
 # Save the parameters from the fit
 import numpy as np
 parameters = dict(
-    state_preparation_params=np.array(state_preparation_params),
-    hamiltonian_params=np.array(hamiltonian_params),
-    lindbladian_params=np.array(lindbladian_params),
+    state_preparation_params=state_preparation_params,
+    hamiltonian_params=hamiltonian_params,
+    lindbladian_params=lindbladian_params,
     times=TIMES,
-    final_loss=np.array(loss),
+    final_loss=loss,
 )
 
 import pickle
-with open("parameters.pickle", "wb") as f:
+with open("parameters_H2L2.pickle", "wb") as f:
     pickle.dump(parameters, f)
 
 %matplotlib widget 
@@ -222,3 +264,14 @@ ax.legend()
 ax.set_xlabel("Time")
 ax.set_ylabel("Probability")
 ax.set_title("Measurement Probabilities")
+
+
+
+# # Pvalue test 
+from tensorflow_probability.substrates.jax import distributions as tfd
+
+nllh = tfd.Multinomial(total_count = SAMPLES, probs = probs).log_prob(data).sum()
+
+# Average nllh 
+samples = tfd.Multinomial(total_count = SAMPLES, probs = probs).sample(10, seed = jax.random.PRNGKey(0))
+nllh_sampled = tfd.Multinomial(total_count = SAMPLES, probs = probs).log_prob(samples)

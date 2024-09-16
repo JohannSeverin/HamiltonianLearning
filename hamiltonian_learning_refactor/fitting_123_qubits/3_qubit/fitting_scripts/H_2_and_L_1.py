@@ -2,15 +2,21 @@ import xarray
 import sys, os
 import jax
 import jax.numpy as jnp
+import pickle
 
 from functools import partial
 
+
+name = "H_2_and_L_2"
+shortname = "H2L2"
+
+load_guesses_from = "H2L2" 
 
 dataset = xarray.open_dataset("../dataset.zarr", engine="zarr")
 data = dataset.sampled_outcome.values
 
 # System parameters
-NQUBITS = 2
+NQUBITS = 3
 
 # Experiment parameters
 TIMES = dataset.time.values
@@ -20,7 +26,7 @@ SAMPLES = dataset.attrs["SAMPLES"]
 
 # Model parameters
 HAMILTONIAN_LOCALITY = 2
-LINDLAD_LOCALITY = 2
+LINDLAD_LOCALITY = 1
 
 # Solver parameters
 INITIAL_STEPSIZE = 1.0
@@ -32,9 +38,9 @@ TOLERANCE = 1e-6
 
 # Optimzier parameters
 LEARNING_RATE_SCAN = 1e-4
-LEARNING_RATE_FINE = 2.5e-5
-ITERATIONS_SME = 250
-ITERATIONS_MLE = 1000
+LEARNING_RATE_FINE = 5e-5
+ITERATIONS_SME = 500
+ITERATIONS_MLE = 500
 
 loss = "squared_difference"
 
@@ -89,6 +95,15 @@ state_preparation_params = state_preparation.state_preparation_params
 measurement_params = measurements.params
 hamiltonian_params = dynamics.hamiltonian_params
 lindbladian_params = dynamics.lindbladian_params
+
+# Load the initial guesses from the previous fit
+if load_guesses_from:
+    with open(f"parameters_{load_guesses_from}.pickle", "rb") as f:
+        loaded_params = pickle.load(f)
+        for key in hamiltonian_params.keys():
+            hamiltonian_params[key] = loaded_params["hamiltonian_params"][key]
+        for key in lindbladian_params.keys():
+            lindbladian_params[key] = loaded_params["lindbladian_params"][key]
 
 # Get the generators to convert the parameters to states or operators
 generate_initial_states = state_preparation.get_initial_state_generator()
@@ -182,7 +197,7 @@ simulated = dataset.measurement_probabilities.copy()
 simulated.values = probs
 
 # Save the dataset 
-simulated.to_zarr("simulated_H2L2.zarr", mode="w")
+simulated.to_zarr(f"simulated_{shortname}.zarr", mode="w")
 
 # Save the parameters from the fit
 import numpy as np
@@ -195,7 +210,7 @@ parameters = dict(
 )
 
 import pickle
-with open("parameters_H2L2.pickle", "wb") as f:
+with open("parameters_{shortname}.pickle", "wb") as f:
     pickle.dump(parameters, f)
 
 %matplotlib widget 

@@ -36,6 +36,8 @@ QUBIT_QUBIT_COUPLING_Z = 15e3  # Hz
 QUBIT_T1 = [30e-6, 30e-6, 30e-6]  # s
 QUBIT_T2 = [30e-6, 30e-6, 30e-6]  # s
 
+TwoQubitTunneling = 100e-6  # s
+
 # Define the initial state on the basis of temperature
 TEMPERATURE = [0, 0, 0]  # [50e-3, 60e-3]  # K
 
@@ -178,11 +180,11 @@ two_qubit_hamiltonian += (
     * np.pi
     * TIME_UNIT
     * QUBIT_QUBIT_COUPLING_Z
-    * tensor(sigmaz(), identity(2), sigmaz())
+    * tensor(identity(2), sigmaz(), sigmaz())
 )
 
 ### Define the collapse operators ###
-from qutip import destroy
+from qutip import destroy, create
 
 collapse_operators = []
 
@@ -204,6 +206,14 @@ collapse_operators += [
     * tensor(identity(2), sigmaz(), identity(2)),
     np.sqrt(dephasing_rates[2] * TIME_UNIT)
     * tensor(identity(2), identity(2), sigmaz()),
+]
+
+# Two qubit tunneling as decay
+collapse_operators += [
+    np.sqrt(1 / (2 * TwoQubitTunneling) * TIME_UNIT)
+    * tensor(identity(2), destroy(2), create(2)),
+    np.sqrt(1 / (2 * TwoQubitTunneling) * TIME_UNIT)
+    * tensor(create(2), destroy(2), identity(2)),
 ]
 
 

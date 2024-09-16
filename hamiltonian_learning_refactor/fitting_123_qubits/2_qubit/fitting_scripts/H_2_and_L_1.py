@@ -277,10 +277,10 @@ ax.set_title("Measurement Probabilities")
 
 
 # # Pvalue test 
-# from tensorflow_probability.substrates.jax import distributions as tfd
+from tensorflow_probability.substrates.jax import distributions as tfd
 
-# nllh = tfd.Multinomial(total_count = SAMPLES, probs = probs).log_prob(data).sum()
+nllh = tfd.Multinomial(total_count = SAMPLES, probs = probs).log_prob(data).sum()
 
-# # Average nllh 
-# samples = tfd.Multinomial(total_count = SAMPLES, probs = probs).sample(1000)
-# nllh_sampled = tfd.Multinomial(total_count = SAMPLES, probs = probs).log_prob(samples)
+# Average nllh 
+samples = tfd.Multinomial(total_count = SAMPLES, probs = probs).sample(10, seed = jax.random.PRNGKey(1))
+nllh_sampled = tfd.Multinomial(total_count = SAMPLES, probs = probs).log_prob(samples)
