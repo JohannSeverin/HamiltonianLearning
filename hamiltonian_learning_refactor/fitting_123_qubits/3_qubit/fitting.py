@@ -14,7 +14,7 @@ NQUBITS = 3
 
 # Experiment parameters
 TIMES = dataset.time.values
-INIT_STATES = ["X", "Y", "Z", "-Z"]
+INIT_STATES = ["X", "Y", "Z", "-X", "-Y", "-Z"]
 MEASUREMENT_BASIS = ["X", "Y", "Z"]
 SAMPLES = dataset.attrs["SAMPLES"]
 
@@ -40,7 +40,7 @@ loss = "squared_difference"
 
 
 # Define the parameterization classes
-sys.path.append("/root/projects/HamiltonianLearning/hamiltonian_learning_refactor")
+sys.path.append("/home/archi1/projects/HamiltonianLearning/hamiltonian_learning_refactor")
 from hamiltonian_learning import (
     Measurements,
     Parameterization,
@@ -60,13 +60,13 @@ dynamics = Parameterization(
 )
 
 state_preparation = StatePreparation(
-    NQUBITS, perfect_state_preparation=True, initial_states=["Z", "X", "Y", "-Z"]
+    NQUBITS, perfect_state_preparation=True, initial_states=["X", "Y", "Z", "-X", "-Y", "-Z"]
 )
 
 measurements = Measurements(
     NQUBITS,
     samples=SAMPLES,
-    basis=["Z", "X", "Y"],
+    basis=["X", "Y", "Z"],
     perfect_measurement=True,
     loss=loss,
     clip=1e-8,

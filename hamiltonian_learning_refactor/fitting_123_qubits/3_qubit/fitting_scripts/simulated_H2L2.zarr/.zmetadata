@@ -31,7 +31,7 @@
         },
         "initial_gate/.zarray": {
             "chunks": [
-                64
+                216
             ],
             "compressor": {
                 "blocksize": 0,
@@ -45,7 +45,7 @@
             "filters": null,
             "order": "C",
             "shape": [
-                64
+                216
             ],
             "zarr_format": 2
         },
@@ -56,10 +56,10 @@
         },
         "measurement_probabilities/.zarray": {
             "chunks": [
-                21,
-                32,
+                11,
+                108,
                 14,
-                8
+                4
             ],
             "compressor": {
                 "blocksize": 0,
@@ -74,7 +74,7 @@
             "order": "C",
             "shape": [
                 41,
-                64,
+                216,
                 27,
                 8
             ],

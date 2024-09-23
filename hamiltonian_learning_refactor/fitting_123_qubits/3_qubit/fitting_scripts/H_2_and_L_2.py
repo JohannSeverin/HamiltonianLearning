@@ -5,6 +5,13 @@ import jax.numpy as jnp
 
 from functools import partial
 
+# Naming
+name = "H_2_and_L_2"
+shortname = "H2L2"
+
+load_guesses_from = "H2L2" 
+
+
 
 dataset = xarray.open_dataset("../dataset.zarr", engine="zarr")
 data = dataset.sampled_outcome.values
@@ -14,7 +21,7 @@ NQUBITS = 3
 
 # Experiment parameters
 TIMES = dataset.time.values
-INIT_STATES = ["X", "Y", "Z", "-Z"]
+INIT_STATES = ["X", "Y", "Z", "-X", "-Y", "-Z"]
 MEASUREMENT_BASIS = ["X", "Y", "Z"]
 SAMPLES = dataset.attrs["SAMPLES"]
 
@@ -31,16 +38,16 @@ ADJOINT = False
 TOLERANCE = 1e-6
 
 # Optimzier parameters
-LEARNING_RATE_SCAN = 1e-4
-LEARNING_RATE_FINE = 5e-5
-ITERATIONS_SME = 500
-ITERATIONS_MLE = 500
+LEARNING_RATE_SCAN = 2e-4
+LEARNING_RATE_FINE = 1e-4
+ITERATIONS_SME = 250
+ITERATIONS_MLE = 250
 
 loss = "squared_difference"
 
 
 # Define the parameterization classes
-sys.path.append("/root/projects/HamiltonianLearning/hamiltonian_learning_refactor")
+sys.path.append("/home/archi1/projects/HamiltonianLearning/hamiltonian_learning_refactor")
 from hamiltonian_learning import (
     Measurements,
     Parameterization,
@@ -60,13 +67,13 @@ dynamics = Parameterization(
 )
 
 state_preparation = StatePreparation(
-    NQUBITS, perfect_state_preparation=True, initial_states=["Z", "X", "Y", "-Z"]
+    NQUBITS, perfect_state_preparation=True, initial_states=INIT_STATES
 )
 
 measurements = Measurements(
     NQUBITS,
     samples=SAMPLES,
-    basis=["Z", "X", "Y"],
+    basis=MEASUREMENT_BASIS,
     perfect_measurement=True,
     loss=loss,
     clip=1e-5,
@@ -89,6 +96,17 @@ state_preparation_params = state_preparation.state_preparation_params
 measurement_params = measurements.params
 hamiltonian_params = dynamics.hamiltonian_params
 lindbladian_params = dynamics.lindbladian_params
+
+
+# Load the initial guesses from the previous fit
+if load_guesses_from:
+    with open(f"parameters_{load_guesses_from}.pickle", "rb") as f:
+        loaded_params = pickle.load(f)
+        for key in hamiltonian_params.keys():
+            hamiltonian_params[key] = loaded_params["hamiltonian_params"][key]
+        for key in lindbladian_params.keys():
+            lindbladian_params[key] = loaded_params["lindbladian_params"][key]
+
 
 # Get the generators to convert the parameters to states or operators
 generate_initial_states = state_preparation.get_initial_state_generator()
@@ -182,7 +200,7 @@ simulated = dataset.measurement_probabilities.copy()
 simulated.values = probs
 
 # Save the dataset 
-simulated.to_zarr("simulated_H2L2.zarr", mode="w")
+simulated.to_zarr(f"simulated_{shortname}.zarr", mode="w")
 
 # Save the parameters from the fit
 import numpy as np
@@ -195,8 +213,9 @@ parameters = dict(
 )
 
 import pickle
-with open("parameters_H2L2.pickle", "wb") as f:
+with open(f"parameters_{shortname}.pickle", "wb") as f:
     pickle.dump(parameters, f)
+
 
 %matplotlib widget 
 import matplotlib.pyplot as plt
@@ -268,10 +287,10 @@ ax.set_title("Measurement Probabilities")
 
 
 # # Pvalue test 
-# from tensorflow_probability.substrates.jax import distributions as tfd
+from tensorflow_probability.substrates.jax import distributions as tfd
 
-# nllh = tfd.Multinomial(total_count = SAMPLES, probs = probs).log_prob(data).sum()
+nllh = tfd.Multinomial(total_count = SAMPLES, probs = probs).log_prob(data).sum()
 
-# # Average nllh 
-# samples = tfd.Multinomial(total_count = SAMPLES, probs = probs).sample(1000)
-# nllh_sampled = tfd.Multinomial(total_count = SAMPLES, probs = probs).log_prob(samples)
+# Average nllh 
+samples = tfd.Multinomial(total_count = SAMPLES, probs = probs).sample(10, seed = jax.random.PRNGKey(0))
+nllh_sampled = tfd.Multinomial(total_count = SAMPLES, probs = probs).log_prob(samples).sum(axis  =(1, 2, 3))

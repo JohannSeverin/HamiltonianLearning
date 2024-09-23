@@ -6,9 +6,9 @@ import pickle
 
 from functools import partial
 
-
-name = "H_2_and_L_2"
-shortname = "H2L2"
+# Naming
+name = "H_2_and_L_1"
+shortname = "H2L1"
 
 load_guesses_from = "H2L2" 
 
@@ -20,7 +20,7 @@ NQUBITS = 3
 
 # Experiment parameters
 TIMES = dataset.time.values
-INIT_STATES = ["X", "Y", "Z", "-Z"]
+INIT_STATES = ["X", "Y", "Z", "-X", "-Y", "-Z"]
 MEASUREMENT_BASIS = ["X", "Y", "Z"]
 SAMPLES = dataset.attrs["SAMPLES"]
 
@@ -37,22 +37,23 @@ ADJOINT = False
 TOLERANCE = 1e-6
 
 # Optimzier parameters
-LEARNING_RATE_SCAN = 1e-4
-LEARNING_RATE_FINE = 5e-5
-ITERATIONS_SME = 500
-ITERATIONS_MLE = 500
+LEARNING_RATE_SCAN = 2e-4
+LEARNING_RATE_FINE = 1e-4
+ITERATIONS_SME = 250
+ITERATIONS_MLE = 750
 
 loss = "squared_difference"
 
 
 # Define the parameterization classes
-sys.path.append("/root/projects/HamiltonianLearning/hamiltonian_learning_refactor")
+sys.path.append("/home/archi1/projects/HamiltonianLearning/hamiltonian_learning_refactor")
 from hamiltonian_learning import (
     Measurements,
     Parameterization,
     Solver,
     StatePreparation,
 )
+
 
 # Define the parameterization classes
 
@@ -66,13 +67,13 @@ dynamics = Parameterization(
 )
 
 state_preparation = StatePreparation(
-    NQUBITS, perfect_state_preparation=True, initial_states=["Z", "X", "Y", "-Z"]
+    NQUBITS, perfect_state_preparation=True, initial_states=INIT_STATES
 )
 
 measurements = Measurements(
     NQUBITS,
     samples=SAMPLES,
-    basis=["Z", "X", "Y"],
+    basis=MEASUREMENT_BASIS,
     perfect_measurement=True,
     loss=loss,
     clip=1e-5,
@@ -210,7 +211,7 @@ parameters = dict(
 )
 
 import pickle
-with open("parameters_{shortname}.pickle", "wb") as f:
+with open(f"parameters_{shortname}.pickle", "wb") as f:
     pickle.dump(parameters, f)
 
 %matplotlib widget 

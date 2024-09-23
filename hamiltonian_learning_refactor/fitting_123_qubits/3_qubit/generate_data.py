@@ -17,7 +17,7 @@ import qutip
 NQUBITS = 3
 
 # Simulation parameters
-DURATION = 10e-6
+DURATION = 4e-6
 NPOINTS = 41
 SAMPLES = 1000
 
@@ -49,17 +49,19 @@ from qutip.qip.operations import ry, rx
 
 # Initial Gates
 INITIAL_GATES = {
-    "z": qutip.qeye(2),  # Starts in z
     "x": ry(np.pi / 2),  # Starts in x
     "y": rx(-np.pi / 2),  # Starts in y
+    "z": qutip.qeye(2),  # Starts in z
+    "-x": ry(-np.pi / 2),  # Starts in x
+    "-y": rx(np.pi / 2),  # Starts in y
     "-z": qutip.sigmax(),  # Start in -z
 }
 
 # Transformations to measurement basis
 PRE_MEASUREMENT_GATES = {
-    "z": qutip.qeye(2),  # Measurement in z
     "x": ry(-np.pi / 2),  # Measurement in x
     "y": rx(np.pi / 2),  # Measurement in y
+    "z": qutip.qeye(2),  # Measurement in z
 }
 
 

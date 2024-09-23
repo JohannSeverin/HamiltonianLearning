@@ -1,3 +1,6 @@
+import os
+
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 import sys
 import itertools
 import jax
@@ -68,7 +71,7 @@ from jax import value_and_grad
 from optax import adam, apply_updates
 
 
-loss_and_grad = value_and_grad(negative_log_likelihood, (0))
+loss_and_grad = jax.jit(value_and_grad(negative_log_likelihood, (0)))
 
 ### Setup the optimizer ###
 from optax import adam, apply_updates
