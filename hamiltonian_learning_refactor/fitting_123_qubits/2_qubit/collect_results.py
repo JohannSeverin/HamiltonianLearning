@@ -15,6 +15,13 @@ import pickle
 items_to_get = ["H1L0", "H1L1", "H2L0", "H2L1", "H2L2"]
 
 
+
+# Draw arrows to indicate the direction of the EP 
+def calculate_explanatory_power(difference_in_log_likelihood, difference_in_parameters):
+    return (2 * difference_in_log_likelihood - difference_in_parameters) / np.sqrt(2 * difference_in_parameters)
+
+
+
 losses = {}
 
 for item in items_to_get:
@@ -29,6 +36,13 @@ number_of_params = {
     "H2L1": 15 + 9 + 9,
     "H2L2": 15 + 225
 }
+
+sets = [("H1L0", "H2L0"), ("H1L0", "H1L1"), ("H2L0", "H2L1"), ("H2L1", "H2L2")]
+
+for set in sets:
+    EP = calculate_explanatory_power(losses[set[0]] - losses[set[1]] , number_of_params[set[1]] - number_of_params[set[0]])
+    print(f"EP for {set[1]} vs {set[0]}: {EP:.3e}")
+
 
 from matplotlib.gridspec import GridSpec
 
