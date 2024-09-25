@@ -4,60 +4,10 @@
         ".zgroup": {
             "zarr_format": 2
         },
-        "final_gate/.zarray": {
+        "__xarray_dataarray_variable__/.zarray": {
             "chunks": [
-                3
-            ],
-            "compressor": {
-                "blocksize": 0,
-                "clevel": 5,
-                "cname": "lz4",
-                "id": "blosc",
-                "shuffle": 1
-            },
-            "dtype": "<U1",
-            "fill_value": null,
-            "filters": null,
-            "order": "C",
-            "shape": [
-                3
-            ],
-            "zarr_format": 2
-        },
-        "final_gate/.zattrs": {
-            "_ARRAY_DIMENSIONS": [
-                "final_gate"
-            ]
-        },
-        "initial_gate/.zarray": {
-            "chunks": [
-                4
-            ],
-            "compressor": {
-                "blocksize": 0,
-                "clevel": 5,
-                "cname": "lz4",
-                "id": "blosc",
-                "shuffle": 1
-            },
-            "dtype": "<U2",
-            "fill_value": null,
-            "filters": null,
-            "order": "C",
-            "shape": [
-                4
-            ],
-            "zarr_format": 2
-        },
-        "initial_gate/.zattrs": {
-            "_ARRAY_DIMENSIONS": [
-                "initial_gate"
-            ]
-        },
-        "measurement_probabilities/.zarray": {
-            "chunks": [
-                41,
-                4,
+                501,
+                6,
                 3,
                 2
             ],
@@ -73,22 +23,80 @@
             "filters": null,
             "order": "C",
             "shape": [
-                41,
-                4,
+                501,
+                6,
                 3,
                 2
             ],
             "zarr_format": 2
         },
-        "measurement_probabilities/.zattrs": {
+        "__xarray_dataarray_variable__/.zattrs": {
             "_ARRAY_DIMENSIONS": [
                 "time",
-                "initial_gate",
-                "final_gate",
-                "outcome"
+                "initial_state_0",
+                "measurement_basis_0",
+                "outcome_0"
             ]
         },
-        "outcome/.zarray": {
+        "initial_state_0/.zarray": {
+            "chunks": [
+                6
+            ],
+            "compressor": {
+                "blocksize": 0,
+                "clevel": 5,
+                "cname": "lz4",
+                "id": "blosc",
+                "shuffle": 1
+            },
+            "dtype": "|O",
+            "fill_value": null,
+            "filters": [
+                {
+                    "id": "vlen-utf8"
+                }
+            ],
+            "order": "C",
+            "shape": [
+                6
+            ],
+            "zarr_format": 2
+        },
+        "initial_state_0/.zattrs": {
+            "_ARRAY_DIMENSIONS": [
+                "initial_state_0"
+            ]
+        },
+        "measurement_basis_0/.zarray": {
+            "chunks": [
+                3
+            ],
+            "compressor": {
+                "blocksize": 0,
+                "clevel": 5,
+                "cname": "lz4",
+                "id": "blosc",
+                "shuffle": 1
+            },
+            "dtype": "|O",
+            "fill_value": null,
+            "filters": [
+                {
+                    "id": "vlen-utf8"
+                }
+            ],
+            "order": "C",
+            "shape": [
+                3
+            ],
+            "zarr_format": 2
+        },
+        "measurement_basis_0/.zattrs": {
+            "_ARRAY_DIMENSIONS": [
+                "measurement_basis_0"
+            ]
+        },
+        "outcome_0/.zarray": {
             "chunks": [
                 2
             ],
@@ -99,7 +107,7 @@
                 "id": "blosc",
                 "shuffle": 1
             },
-            "dtype": "<U1",
+            "dtype": "<i8",
             "fill_value": null,
             "filters": null,
             "order": "C",
@@ -108,14 +116,14 @@
             ],
             "zarr_format": 2
         },
-        "outcome/.zattrs": {
+        "outcome_0/.zattrs": {
             "_ARRAY_DIMENSIONS": [
-                "outcome"
+                "outcome_0"
             ]
         },
         "time/.zarray": {
             "chunks": [
-                41
+                501
             ],
             "compressor": {
                 "blocksize": 0,
@@ -129,7 +137,7 @@
             "filters": null,
             "order": "C",
             "shape": [
-                41
+                501
             ],
             "zarr_format": 2
         },

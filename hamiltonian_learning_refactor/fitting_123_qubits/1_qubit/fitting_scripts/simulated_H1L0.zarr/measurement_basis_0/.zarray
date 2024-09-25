@@ -1,9 +1,6 @@
 {
     "chunks": [
-        41,
-        4,
-        3,
-        2
+        3
     ],
     "compressor": {
         "blocksize": 0,
@@ -12,15 +9,16 @@
         "id": "blosc",
         "shuffle": 1
     },
-    "dtype": "<f8",
-    "fill_value": "NaN",
-    "filters": null,
+    "dtype": "|O",
+    "fill_value": null,
+    "filters": [
+        {
+            "id": "vlen-utf8"
+        }
+    ],
     "order": "C",
     "shape": [
-        41,
-        4,
-        3,
-        2
+        3
     ],
     "zarr_format": 2
 }

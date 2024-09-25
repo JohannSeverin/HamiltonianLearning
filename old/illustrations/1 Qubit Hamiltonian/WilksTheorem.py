@@ -18,7 +18,7 @@ SAMPLES = 100
 DURATION = 10000
 TIMESTEPS = 20
 LEARNING_RATE = 1e-4
-ITERATIONS = 400
+ITERATIONS = 200
 
 
 # Hamiltonian Parmas
@@ -80,6 +80,11 @@ from optax import adam, apply_updates
 opt = adam(LEARNING_RATE)
 opt_state = opt.init((hamiltonian_params, lindbladian_params))
 
+logs = {
+    "Loss": {0: negative_log_likelihood(hamiltonian_params, lindbladian_params)},
+    "parameters": {0: (hamiltonian_params, lindbladian_params)},
+}
+
 for i in range(ITERATIONS):
     loss, grad = loss_and_grad(hamiltonian_params, lindbladian_params)
     updates, opt_state = opt.update(grad, opt_state)
@@ -88,6 +93,16 @@ for i in range(ITERATIONS):
     )
 
     print(f"Iteration {i}, Loss: {loss}")
+
+    logs["Loss"][i + 1] = loss
+
+    if (i + 1) % 5 == 0:
+        logs["parameters"][i + 1] = (hamiltonian_params, lindbladian_params)
+
+import pickle
+
+with open("lindbladian_logs.pkl", "wb") as f:
+    pickle.dump(logs, f)
 
 
 # Analyze the results

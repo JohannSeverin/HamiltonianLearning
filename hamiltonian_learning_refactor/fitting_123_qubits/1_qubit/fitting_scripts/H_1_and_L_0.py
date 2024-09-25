@@ -5,22 +5,24 @@ import jax.numpy as jnp
 
 from functools import partial
 
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
-dataset = xarray.open_dataset("../DatasetLindblad.zarr", engine="zarr")
-data = dataset.sampled_outcome.values
+
+dataset = xarray.open_dataset("/home/archi1/projects/HamiltonianLearning/hamiltonian_learning_refactor/fitting_123_qubits/1_qubit/DatasetLindblad.nc")
+data = dataset.__xarray_dataarray_variable__.values
 
 # System parameters
 NQUBITS = 1
 
 # Experiment parameters
 TIMES = dataset.time.values
-INIT_STATES = ["X", "Y", "Z", "-Z"]
+INIT_STATES = ["X", "Y", "Z", "-X", "-Y", "-Z"]
 MEASUREMENT_BASIS = ["X", "Y", "Z"]
-SAMPLES = dataset.attrs["SAMPLES"]
+SAMPLES = 100
 
 # Model parameters
 HAMILTONIAN_LOCALITY = 1
-LINDLAD_LOCALITY = 0
+LINDLAD_LOCALITY = 1
 
 # Solver parameters
 INITIAL_STEPSIZE = 1.0
@@ -33,14 +35,14 @@ TOLERANCE = 1e-6
 # Optimzier parameters
 LEARNING_RATE_SCAN = 1e-4
 LEARNING_RATE_FINE = 5e-5
-ITERATIONS_SME = 250
-ITERATIONS_MLE = 750
+ITERATIONS_SME = 0
+ITERATIONS_MLE = 250
 
 loss = "squared_difference"
 
 
 # Define the parameterization classes
-sys.path.append("/root/projects/HamiltonianLearning/hamiltonian_learning_refactor")
+sys.path.append("/home/archi1/projects/HamiltonianLearning/hamiltonian_learning_refactor")
 from hamiltonian_learning import (
     Measurements,
     Parameterization,
@@ -54,13 +56,13 @@ dynamics = Parameterization(
     NQUBITS,
     hamiltonian_locality=HAMILTONIAN_LOCALITY,
     lindblad_locality=LINDLAD_LOCALITY,
-    hamiltonian_amplitudes=[1e-4, 1e-5],
+    hamiltonian_amplitudes=[1e-4],
     lindblad_amplitudes=[1e-3],
     seed = 1
 )
 
 state_preparation = StatePreparation(
-    NQUBITS, perfect_state_preparation=True, initial_states=["Z", "X", "Y", "-Z"]
+    NQUBITS, perfect_state_preparation=True, initial_states=INIT_STATES
 )
 
 measurements = Measurements(
@@ -89,14 +91,6 @@ state_preparation_params = state_preparation.state_preparation_params
 measurement_params = measurements.params
 hamiltonian_params = dynamics.hamiltonian_params
 lindbladian_params = dynamics.lindbladian_params
-
-# Load guesses
-import pickle
-with open("parameters_H2L1.pickle", "rb") as f:
-    parameters = pickle.load(f)
-
-hamiltonian_params[1] = parameters["hamiltonian_params"][1]
-# lindbladian_params[1] = parameters["lindbladian_params"][1]
 
 
 # Get the generators to convert the parameters to states or operators
@@ -187,7 +181,7 @@ states = evolve_states(initial_states, hamiltonian, lindbladian)
 probs = measurements.calculate_measurement_probabilities(states)
 
 # Plot the results along with the data points using ipywidgets interactive
-simulated = dataset.measurement_probabilities.copy()
+simulated = dataset.__xarray_dataarray_variable__.copy()
 simulated.values = probs
 
 # Save the dataset 
@@ -219,8 +213,8 @@ fig, ax = plt.subplots(1, 1, figsize=(8, 5))
 x = TIMES
 
 # Get the initial states and measurement basis options
-initial_states_options = simulated.initial_gate.values
-measurement_basis_options = simulated.final_gate.values
+initial_states_options = simulated.initial_state_0.values
+measurement_basis_options = simulated.measurement_basis_0.values
 
 # Define the interactive function
 def update_plot(initial_state, measurement_basis):
@@ -232,13 +226,13 @@ def update_plot(initial_state, measurement_basis):
 
 
         y = (
-            dataset.sel(initial_gate = initial_state, final_gate=measurement_basis, outcome=outcome).sampled_outcome.values
+            dataset.sel(initial_state_0 = initial_state, measurement_basis_0=measurement_basis, outcome_0=outcome).sampled_outcome.values
             / SAMPLES
         )
         ax.scatter(x, y, c = f"C{i}")
 
         # Get the corresponding simulated values
-        y = simulated.sel(initial_gate=initial_state, final_gate=measurement_basis, outcome=outcome).values
+        y = simulated.sel(initial_state_0=initial_state, measurement_basis_0=measurement_basis, outcome_0=outcome).values
         ax.plot(x, y, f"C{i}", label=outcome)
     
     ax.legend()

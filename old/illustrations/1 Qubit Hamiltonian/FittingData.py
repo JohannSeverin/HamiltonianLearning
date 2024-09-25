@@ -73,6 +73,12 @@ from optax import adam, apply_updates
 
 loss_and_grad = jax.jit(value_and_grad(negative_log_likelihood, (0)))
 
+logs = {
+    "Loss": {},
+    "Parameters": {},
+}
+
+
 ### Setup the optimizer ###
 from optax import adam, apply_updates
 
@@ -85,6 +91,11 @@ for i in range(ITERATIONS):
     hamiltonian_params = apply_updates(hamiltonian_params, updates)
 
     print(f"Iteration {i}, Loss: {loss}")
+
+    logs["Loss"][i] = loss
+
+    if i % 10 == 0:
+        logs["Parameters"][i] = hamiltonian_params
 
 
 # Analyze the results
