@@ -6,9 +6,13 @@ import itertools
 import jax
 import xarray as xr
 
+jax.config.update("jax_enable_x64", True)
+
 sys.path.append("../..")
 from utils import *
 from hamiltonian_learning_utils import *
+import matplotlib.pyplot as plt 
+plt.style.use("/home/johann/projects/HamiltonianLearning/hamiltonian_learning_refactor/utils/presentation_figure_template.mplstyle")
 
 # Load Data
 xarray = xr.open_dataarray("DatasetLindblad.nc")
@@ -233,7 +237,7 @@ uniform_probs = jnp.ones_like(probs) / 2
 
 # P value estimate for the fit
 sampled_from_fit = Binomial(total_count=SAMPLES, probs=probs[..., 1]).sample(
-    1000, seed=jax.random.PRNGKey(0)
+    1000, seed=jax.random.key(0)
 )
 
 sampled_from_uniform = Binomial(
