@@ -40,7 +40,7 @@ def _get_basis_transformations(basis_strings: List[str]):
     return [_basis_transformations_names[basis] for basis in basis_strings]
 
 
-def _get_basis_transformation_combinations(basis_strings, n_qubits):
+def _get_basis_transformation_combinations(bass_strings, n_qubits):
     """
     Return the basis transformations for the Pauli operators
     """
